@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@theme {
+  --color-wmsu-black: #0a0a0a;
+  --font-sans: 'Libra Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Libra Sans – by Stefan Peev, Context Ltd (OFL). Optional: add font files in public/fonts/ (see public/fonts/README.md). */
+@font-face {
+  font-family: 'Libra Sans';
+  src: url('/fonts/LibraSans-Regular.woff2') format('woff2'),
+       url('/fonts/LibraSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Libra Sans';
+  src: url('/fonts/LibraSans-Bold.woff2') format('woff2'),
+       url('/fonts/LibraSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* WMSU Color Theme */
+:root {
+  --wmsu-red: #8B0000;
+  --wmsu-red-light: #A52A2A;
+  --wmsu-red-dark: #6B0000;
+  --wmsu-green: #228B22;
+  --wmsu-orange: #FF8C00;
+  --wmsu-blue: #1E40AF;
+  --wmsu-white: #FFFFFF;
+  --wmsu-gray-light: #F5F5F5;
+  --wmsu-gray: #E5E5E5;
+  /* Deep solid black for primary text (Poppins-style contrast) */
+  --wmsu-text-black: #0a0a0a;
+}
+
+/* Responsive base font: scales between 14px and 16px with viewport */
+html {
+  font-size: clamp(14px, 0.875rem + 0.25vw, 16px);
+}
+
+/* Custom styles */
+body {
+  font-family: 'Libra Sans', var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background-color: var(--wmsu-gray-light);
+  color: var(--wmsu-text-black);
+}
+
+/* Page headers: responsive size and bold */
+main h1 {
+  font-weight: 700;
+  font-size: clamp(1.375rem, 4vw + 1rem, 1.875rem);
+  line-height: 1.25;
+}
+
+/* Page subtitles (e.g. under h1): scale with viewport */
+main h1 + p {
+  font-size: clamp(0.8125rem, 0.5vw + 0.75rem, 1rem);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--wmsu-gray-light);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wmsu-red);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--wmsu-red-dark);
+}
+
+/* Landing page: hide scrollbar until user scrolls */
+html.landing-scrollbar-hidden {
+  scrollbar-width: none;
+}
+html.landing-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+html.landing-scrollbar-hidden.scrollbar-visible {
+  scrollbar-width: thin;
+}
+html.landing-scrollbar-hidden.scrollbar-visible::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+/* Hide number input spin buttons */
+.input-no-spinner::-webkit-inner-spin-button,
+.input-no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.input-no-spinner {
+  -moz-appearance: textfield;
+}
+
+/* Smooth transitions */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
