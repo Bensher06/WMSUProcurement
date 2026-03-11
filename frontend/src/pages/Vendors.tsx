@@ -15,7 +15,9 @@ import {
   XCircle,
   Clock,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  FileText,
+  ExternalLink
 } from 'lucide-react';
 
 const Vendors = () => {
@@ -305,6 +307,28 @@ const Vendors = () => {
                           onError={() => setImageErrors((prev) => new Set(prev).add(supplier.id))}
                         />
                       </a>
+                    </div>
+                  )}
+                  {Array.isArray(supplier.portfolio_urls) && supplier.portfolio_urls.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-2">Attached files (portfolio)</p>
+                      <ul className="space-y-1.5">
+                        {supplier.portfolio_urls.map((url, i) => (
+                          <li key={i}>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1.5 text-sm text-red-900 hover:text-red-700 hover:underline focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded"
+                            >
+                              <FileText className="w-4 h-4 shrink-0" />
+                              <span>Document {i + 1}</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                   {(supplier.tin_number || supplier.business_registration_no || supplier.business_type) && (
