@@ -1,130 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileText, Calendar, Download, Hash, AlertCircle, Info } from 'lucide-react';
-import { useState } from 'react';
-
-// Mock data for bid bulletins and supplements
-const mockBidBulletins = [
-  {
-    id: '1',
-    type: 'Bid Bulletin',
-    title: 'Bid Bulletin No. 1 - Supply and Delivery of Laboratory Equipment',
-    referenceNo: 'WMSU-BB-2024-001',
-    date: '2024-02-15',
-    relatedTo: 'WMSU-PR-2024-001',
-    description: 'This bulletin provides clarifications and amendments to the bidding documents for the Supply and Delivery of Laboratory Equipment for Chemistry Department.',
-    changes: [
-      'Extension of submission deadline to March 20, 2024',
-      'Clarification on technical specifications for microscopes',
-      'Updated delivery timeline requirements'
-    ],
-    attachments: [
-      { name: 'Bid Bulletin No. 1.pdf', url: '#' },
-      { name: 'Amended Technical Specifications.pdf', url: '#' }
-    ],
-    status: 'Active'
-  },
-  {
-    id: '2',
-    type: 'Supplemental Bid Bulletin',
-    title: 'Supplemental Bid Bulletin - Renovation of Library Reading Area',
-    referenceNo: 'WMSU-SBB-2024-001',
-    date: '2024-02-20',
-    relatedTo: 'WMSU-PR-2024-002',
-    description: 'This supplemental bulletin contains important updates and modifications to the original bidding documents for the Library Reading Area Renovation project.',
-    changes: [
-      'Additional requirements for air conditioning system',
-      'Updated material specifications',
-      'Revised project timeline',
-      'New safety requirements'
-    ],
-    attachments: [
-      { name: 'Supplemental Bid Bulletin.pdf', url: '#' },
-      { name: 'Updated Project Timeline.pdf', url: '#' },
-      { name: 'Safety Requirements.pdf', url: '#' }
-    ],
-    status: 'Active'
-  },
-  {
-    id: '3',
-    type: 'Bid Bulletin',
-    title: 'Bid Bulletin No. 2 - Supply of Office Supplies and Stationery',
-    referenceNo: 'WMSU-BB-2024-002',
-    date: '2024-02-25',
-    relatedTo: 'WMSU-PR-2024-003',
-    description: 'Important clarifications and updates regarding the bidding for Office Supplies and Stationery.',
-    changes: [
-      'Updated quantity requirements',
-      'Clarification on delivery schedule',
-      'Additional product specifications'
-    ],
-    attachments: [
-      { name: 'Bid Bulletin No. 2.pdf', url: '#' },
-      { name: 'Updated Quantity List.pdf', url: '#' }
-    ],
-    status: 'Active'
-  },
-  {
-    id: '4',
-    type: 'Supplemental Bid Bulletin',
-    title: 'Supplemental Bid Bulletin - CCTV System Installation',
-    referenceNo: 'WMSU-SBB-2024-002',
-    date: '2024-03-01',
-    relatedTo: 'WMSU-PR-2024-004',
-    description: 'This supplemental bulletin provides critical updates to the CCTV System Installation project specifications and requirements.',
-    changes: [
-      'Increased number of cameras from 50 to 60',
-      'Updated storage capacity requirements',
-      'New network infrastructure specifications',
-      'Extended warranty requirements'
-    ],
-    attachments: [
-      { name: 'Supplemental Bid Bulletin.pdf', url: '#' },
-      { name: 'Updated Technical Specifications.pdf', url: '#' },
-      { name: 'Network Requirements.pdf', url: '#' }
-    ],
-    status: 'Active'
-  },
-  {
-    id: '5',
-    type: 'Bid Bulletin',
-    title: 'Bid Bulletin No. 3 - Supply and Delivery of Computer Equipment',
-    referenceNo: 'WMSU-BB-2024-003',
-    date: '2024-03-05',
-    relatedTo: 'WMSU-PR-2024-005',
-    description: 'Clarifications and amendments to the Computer Equipment procurement bidding documents.',
-    changes: [
-      'Updated minimum system requirements',
-      'Clarification on warranty terms',
-      'Revised delivery schedule',
-      'Additional software requirements'
-    ],
-    attachments: [
-      { name: 'Bid Bulletin No. 3.pdf', url: '#' },
-      { name: 'System Requirements.pdf', url: '#' },
-      { name: 'Software Specifications.pdf', url: '#' }
-    ],
-    status: 'Active'
-  },
-  {
-    id: '6',
-    type: 'Notice',
-    title: 'Notice of Postponement - Library Renovation Project',
-    referenceNo: 'WMSU-NOTICE-2024-001',
-    date: '2024-03-10',
-    relatedTo: 'WMSU-PR-2024-002',
-    description: 'Official notice regarding the postponement of the opening of bids for the Library Reading Area Renovation project.',
-    changes: [
-      'New opening date: March 25, 2024',
-      'Updated submission deadline',
-      'Revised schedule of activities'
-    ],
-    attachments: [
-      { name: 'Notice of Postponement.pdf', url: '#' },
-      { name: 'Revised Schedule.pdf', url: '#' }
-    ],
-    status: 'Active'
-  }
-];
+import { useState, useEffect } from 'react';
+import { bidBulletinsAPI } from '../lib/supabaseApi';
+import type { BidBulletin } from '../types/database';
 
 function formatDate(dateString: string): string {
   if (!dateString?.trim()) return dateString || '';
@@ -137,32 +15,32 @@ function formatDate(dateString: string): string {
 }
 
 function getTypeColor(type: string): string {
-  if (type.toLowerCase().includes('supplemental')) {
-    return 'bg-orange-100 text-orange-800';
-  }
-  if (type.toLowerCase().includes('notice')) {
-    return 'bg-blue-100 text-blue-800';
-  }
-  return 'bg-green-100 text-green-800';
+  if (type === 'Supplemental') return 'bg-orange-100 text-orange-800';
+  if (type === 'Notice') return 'bg-blue-100 text-blue-800';
+  return 'bg-gray-100 text-gray-800'; // Bulletins
 }
+
+type BulletinItem = BidBulletin & { id: string };
 
 export default function BidBulletins() {
   const navigate = useNavigate();
+  const [bulletins, setBulletins] = useState<BulletinItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedBulletin, setSelectedBulletin] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('All');
 
-  const selectedItem = mockBidBulletins.find(item => item.id === selectedBulletin);
-  
-  const filteredBulletins = filterType === 'All' 
-    ? mockBidBulletins 
-    : mockBidBulletins.filter(item => 
-        filterType === 'Bulletins' 
-          ? item.type.toLowerCase().includes('bid bulletin') && !item.type.toLowerCase().includes('supplemental')
-          : item.type.toLowerCase().includes(filterType.toLowerCase())
-      );
+  useEffect(() => {
+    bidBulletinsAPI.getAll().then(setBulletins).catch(() => setBulletins([])).finally(() => setLoading(false));
+  }, []);
+
+  const selectedItem = bulletins.find(item => item.id === selectedBulletin) ?? null;
+
+  const filteredBulletins = filterType === 'All'
+    ? bulletins
+    : bulletins.filter(item => item.type === filterType);
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-gray-50 min-h-screen flex flex-col">
       {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between h-14 bg-gray-100 border-b border-gray-200 px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2 shrink-0">
@@ -176,7 +54,7 @@ export default function BidBulletins() {
       </nav>
 
       {/* Main Content */}
-      <div className="pt-14">
+      <main className="flex-1 pt-14">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           {/* Header */}
           <div className="mb-8">
@@ -214,6 +92,9 @@ export default function BidBulletins() {
           </div>
 
           {/* Bulletins List */}
+          {loading ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center text-gray-500">Loading…</div>
+          ) : (
           <div className="space-y-4">
             {filteredBulletins.map((bulletin) => (
               <div
@@ -241,12 +122,14 @@ export default function BidBulletins() {
                         <Calendar className="w-4 h-4" />
                         <span>{formatDate(bulletin.date)}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Info className="w-4 h-4" />
-                        <span>Related to: {bulletin.relatedTo}</span>
-                      </div>
+                      {bulletin.relatedTo && (
+                        <div className="flex items-center gap-2">
+                          <Info className="w-4 h-4" />
+                          <span>Related to: {bulletin.relatedTo}</span>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-sm text-gray-600 line-clamp-2">{bulletin.description}</p>
+                    {bulletin.description && <p className="text-sm text-gray-600 line-clamp-2">{bulletin.description}</p>}
                   </div>
                   <div className="flex items-center gap-2 text-red-900">
                     <span className="text-sm font-medium">View Details</span>
@@ -266,7 +149,7 @@ export default function BidBulletins() {
                           Changes & Updates
                         </h4>
                         <ul className="space-y-2">
-                          {bulletin.changes.map((change, index) => (
+                          {(Array.isArray(bulletin.changes) ? bulletin.changes : []).map((change, index) => (
                             <li key={index} className="flex items-start gap-2 text-sm text-gray-600">
                               <span className="text-red-900 mt-1">•</span>
                               <span>{change}</span>
@@ -302,18 +185,19 @@ export default function BidBulletins() {
               </div>
             ))}
           </div>
+          )}
 
-          {filteredBulletins.length === 0 && (
+          {!loading && filteredBulletins.length === 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
               <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-500">No bulletins found for the selected filter.</p>
             </div>
           )}
         </div>
-      </div>
+      </main>
 
-      {/* Footer */}
-      <footer className="py-8 px-4 bg-red-950 text-red-100 text-center text-sm mt-12">
+      {/* Footer – at bottom of viewport */}
+      <footer className="mt-auto py-8 px-4 bg-red-900 text-white text-center text-sm border-t border-red-800">
         Western Mindanao State University · Procurement Office · WMSU-Procurement © {new Date().getFullYear()}
       </footer>
     </div>

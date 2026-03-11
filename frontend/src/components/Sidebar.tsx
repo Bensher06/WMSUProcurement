@@ -152,7 +152,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
       <div className="p-4 border-t border-red-700/50 bg-red-950">
         <div className="flex items-center gap-3 px-3 py-3 mb-3 rounded-lg bg-red-900/50">
           <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center border-2 border-red-700 shadow-sm">
-            <span className="text-xs sm:text-sm font-bold text-red-900">
+            <span className="text-xs sm:text-sm font-bold text-gray-900">
               {profile?.full_name?.charAt(0).toUpperCase() || '?'}
             </span>
           </div>

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { FileText, Download, Users, MapPin, Gavel } from 'lucide-react';
+import { FileText, Download, Users, MapPin, Gavel, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { landingAPI } from '../lib/supabaseApi';
 import type { LandingContent } from '../types/database';
@@ -48,38 +48,39 @@ export default function Landing() {
   const heroOpacity = Math.max(0, 1 - scrollY / 400);
 
   const t = content?.transparency;
-  const bidding = content?.bidding?.rows ?? [];
   const docs = content?.documents?.items ?? [];
-  const planning = content?.planning;
   const vendor = content?.vendor;
   const bac = content?.bac;
 
   return (
-    <div className="bg-gray-50">
+    <div className="bg-gray-50 min-h-screen flex flex-col">
       {/* Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between h-14 bg-gray-100 border-b border-gray-200 px-4 sm:px-6">
+      <nav className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between h-14 bg-red-900 border-b border-red-800 px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2 shrink-0">
-          <img src="/wmsu1.jpg" alt="WMSU" className="w-8 h-8 rounded-full object-cover border border-gray-200" />
-          <span className="font-bold text-gray-900 text-sm sm:text-base">WMSU-Procurement</span>
+          <img src="/wmsu1.jpg" alt="WMSU" className="w-8 h-8 rounded-full object-cover border border-red-800" />
+          <span className="font-bold text-white text-sm sm:text-base">WMSU-Procurement</span>
         </Link>
-        <div className="hidden md:flex items-center gap-0 text-sm text-gray-700">
-          <a href="#hero" className="px-4 py-2 hover:bg-gray-200/80 rounded transition-colors">Home</a>
-          <span className="w-px h-5 bg-gray-300" aria-hidden />
-          <a href="#transparency" className="px-4 py-2 hover:bg-gray-200/80 rounded transition-colors">Transparency</a>
-          <span className="w-px h-5 bg-gray-300" aria-hidden />
-          <a href="#bidding" className="px-4 py-2 hover:bg-gray-200/80 rounded transition-colors">Live Bidding</a>
-          <span className="w-px h-5 bg-gray-300" aria-hidden />
-          <a href="#downloads" className="px-4 py-2 hover:bg-gray-200/80 rounded transition-colors">Downloads</a>
-          <span className="w-px h-5 bg-gray-300" aria-hidden />
-          <a href="#vendor" className="px-4 py-2 hover:bg-gray-200/80 rounded transition-colors">Vendor Corner</a>
-          <span className="w-px h-5 bg-gray-300" aria-hidden />
-          <Link to="/login" className="px-4 py-2 hover:bg-gray-200/80 rounded transition-colors font-medium">Log in</Link>
+        <div className="hidden md:flex items-center gap-0 text-sm text-red-100">
+          <a href="#hero" className="px-4 py-2 hover:bg-red-800 rounded transition-colors">Home</a>
+          <span className="w-px h-5 bg-red-700" aria-hidden />
+          <a href="#transparency" className="px-4 py-2 hover:bg-red-800 rounded transition-colors">Transparency</a>
+          <span className="w-px h-5 bg-red-700" aria-hidden />
+          <a href="#downloads" className="px-4 py-2 hover:bg-red-800 rounded transition-colors">Downloads</a>
+          <span className="w-px h-5 bg-red-700" aria-hidden />
+          <a href="#vendor" className="px-4 py-2 hover:bg-red-800 rounded transition-colors">Vendor Corner</a>
+          <span className="w-px h-5 bg-red-700" aria-hidden />
+          <Link to="/accreditation-portal" className="px-4 py-2 hover:bg-red-800 rounded transition-colors">Accreditation</Link>
+          <span className="w-px h-5 bg-red-700" aria-hidden />
+          <Link to="/login" className="px-4 py-2 hover:bg-red-800 rounded transition-colors font-medium text-white">Log in</Link>
         </div>
         <div className="flex md:hidden items-center gap-2">
-          <Link to="/login" className="px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200/80 rounded">Log in</Link>
+          <Link to="/accreditation-portal" className="px-3 py-2 text-sm font-medium text-red-100 hover:bg-red-800 rounded">Accreditation</Link>
+          <Link to="/login" className="px-3 py-2 text-sm font-medium text-white hover:bg-red-800 rounded">Log in</Link>
         </div>
       </nav>
 
+      {/* Main content – grows to push footer to bottom */}
+      <main className="flex-1">
       {/* Hero – scroll-animated */}
       <section id="hero" className="relative h-screen flex flex-col items-center justify-center overflow-hidden">
         <div
@@ -114,117 +115,133 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 1. Transparency Seal */}
-      <section id="transparency" className="py-16 sm:py-24 px-4 sm:px-6 bg-white border-t border-gray-200">
+      {/* 1. Transparency Seal — mission, 2 cards, + optional featured item */}
+      <section id="transparency" className="py-16 sm:py-24 px-4 sm:px-6 bg-white border-t border-red-100">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-600 text-white mb-6" aria-hidden>
-            <span className="text-3xl">◆</span>
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-900 mb-6">
+            <img
+              src="/wmsu1.jpg"
+              alt="WMSU"
+              className="w-12 h-12 rounded-full object-cover border-2 border-white/70"
+            />
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Transparency Seal</h2>
           {loading ? (
             <p className="mt-4 text-gray-500">Loading…</p>
           ) : (
             <>
-              <p className="mt-4 text-gray-600 leading-relaxed max-w-2xl mx-auto">
-                {t?.mission || 'In compliance with the requirements of Section 93 (Transparency Seal) R.A. 10155 (General Appropriations Act), WMSU is committed to Accountable and Transparent Governance in all its procurement activities.'}
-              </p>
-              {(t?.ctaPrimary?.label || t?.ctaSecondary?.label) && (
-                <div className="mt-10 grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto text-left">
-                  {t?.ctaPrimary?.label && (
-                    <Link
-                      to={t.ctaPrimary.label.toLowerCase().includes('active bidding') || t.ctaPrimary.label.toLowerCase().includes('bidding') ? '/active-bidding' : (t.ctaPrimary.url || '#')}
-                      className="group flex flex-col p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-red-900 hover:shadow-lg transition-all"
-                    >
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="flex items-center justify-center w-12 h-12 rounded-lg bg-red-900 text-white shrink-0">
-                          <Gavel className="w-6 h-6" />
-                        </span>
-                        <h3 className="font-semibold text-gray-900 group-hover:text-red-900">{t.ctaPrimary.label}</h3>
-                      </div>
-                      {(t.ctaPrimary.description ?? '').trim() ? (
-                        <p className="text-sm text-gray-600 mb-4 flex-1">{t.ctaPrimary.description}</p>
-                      ) : (
-                        <p className="text-sm text-gray-500 mb-4 flex-1">View current active bidding opportunities and submit your bids.</p>
-                      )}
-                      <span className="inline-flex items-center gap-2 text-red-900 font-medium text-sm group-hover:underline">
-                        {t.ctaPrimary.label}
-                        <span aria-hidden>→</span>
-                      </span>
-                    </Link>
-                  )}
-                  {t?.ctaSecondary?.label && (
-                    <Link
-                      to={t.ctaSecondary.label.toLowerCase().includes('bulletins') || t.ctaSecondary.label.toLowerCase().includes('supplemental') || t.ctaSecondary.label.toLowerCase().includes('bid') ? '/bid-bulletins' : (t.ctaSecondary.url || '#')}
-                      className="group flex flex-col p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-red-900 hover:shadow-lg transition-all"
-                    >
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="flex items-center justify-center w-12 h-12 rounded-lg bg-red-900 text-white shrink-0">
-                          <FileText className="w-6 h-6" />
-                        </span>
-                        <h3 className="font-semibold text-gray-900 group-hover:text-red-900">{t.ctaSecondary.label}</h3>
-                      </div>
-                      {(t.ctaSecondary.description ?? '').trim() ? (
-                        <p className="text-sm text-gray-600 mb-4 flex-1">{t.ctaSecondary.description}</p>
-                      ) : (
-                        <p className="text-sm text-gray-500 mb-4 flex-1">Access bid bulletins, supplements, and updates for ongoing procurements.</p>
-                      )}
-                      <span className="inline-flex items-center gap-2 text-red-900 font-medium text-sm group-hover:underline">
-                        {t.ctaSecondary.label}
-                        <span aria-hidden>→</span>
-                      </span>
-                    </Link>
-                  )}
-                </div>
+              {t?.mission && (
+                <p className="mt-4 text-gray-600 leading-relaxed max-w-2xl mx-auto">
+                  {t.mission}
+                </p>
               )}
+              {/* Two fixed cards (not editable by admin) */}
+              <div className="mt-10 grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto text-left">
+                <Link
+                  to="/active-bidding"
+                  className="group flex flex-col p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-red-900 hover:shadow-lg transition-all"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="flex items-center justify-center w-12 h-12 rounded-lg bg-red-900 text-white shrink-0">
+                      <Gavel className="w-6 h-6" />
+                    </span>
+                    <h3 className="font-semibold text-gray-900 group-hover:text-gray-800">Active Bidding</h3>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-4 flex-1">View current active bidding opportunities and submit your bids.</p>
+                  <span className="inline-flex items-center gap-2 text-gray-700 font-medium text-sm group-hover:underline">
+                    Active Bidding
+                    <span aria-hidden>→</span>
+                  </span>
+                </Link>
+                <Link
+                  to="/bid-bulletins"
+                  className="group flex flex-col p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-red-900 hover:shadow-lg transition-all"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="flex items-center justify-center w-12 h-12 rounded-lg bg-red-900 text-white shrink-0">
+                      <FileText className="w-6 h-6" />
+                    </span>
+                    <h3 className="font-semibold text-gray-900 group-hover:text-gray-800">Supplemental / Bid Bulletins</h3>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-4 flex-1">Access bid bulletins, supplements, and updates for ongoing procurements.</p>
+                  <span className="inline-flex items-center gap-2 text-gray-700 font-medium text-sm group-hover:underline">
+                    Supplemental / Bid Bulletins
+                    <span aria-hidden>→</span>
+                  </span>
+                </Link>
+              </div>
+              {/* Saved transparency seal entries (from admin) — show all items from items[] */}
+              {(() => {
+                const itemsArray = Array.isArray(t?.items) ? t.items : [];
+                const fallbackSingle = t?.featuredItem ? [{ featuredItem: t.featuredItem }] : [];
+                const allEntries = (itemsArray.length > 0 ? itemsArray : fallbackSingle).filter(
+                  (e): e is { featuredItem: NonNullable<typeof t>['featuredItem'] } => Boolean(e?.featuredItem)
+                );
+                const entries = allEntries.filter((e) => {
+                  const s = (e.featuredItem?.status ?? 'Active').trim().toLowerCase();
+                  return s === 'active';
+                });
+                if (entries.length === 0) return null;
+                return (
+                  <div className="mt-12 w-full max-w-4xl mx-auto">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3 text-left">Live Bidding Board</h3>
+                    <p className="text-sm text-gray-600 mb-3 text-left">Active opportunities only.</p>
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-red-900/10 border-b border-red-200">
+                                <th className="text-left py-3 px-4 font-semibold text-gray-700">Project Title</th>
+                                <th className="text-left py-3 px-4 font-semibold text-gray-700">ABC (₱)</th>
+                                <th className="text-left py-3 px-4 font-semibold text-gray-700">Reference No.</th>
+                                <th className="text-left py-3 px-4 font-semibold text-gray-700">Closing Date</th>
+                                <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entries.map((e, i) => {
+                                const f = e.featuredItem!;
+                                const status = (f.status ?? 'Active').trim() || 'Active';
+                                const isActive = status.toLowerCase() === 'active';
+                                return (
+                                  <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                                    <td className="py-3 px-4 text-gray-800">{f.projectTitle ?? '—'}</td>
+                                    <td className="py-3 px-4">
+                                      {typeof f.abc === 'number' ? `₱${f.abc.toLocaleString()}` : (f.abc != null ? `₱${String(f.abc)}` : '—')}
+                                    </td>
+                                    <td className="py-3 px-4 font-mono text-gray-600">{f.referenceNo ?? '—'}</td>
+                                    <td className="py-3 px-4">
+                                      <span className="inline-flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-gray-500 shrink-0" aria-hidden />
+                                        {formatClosingDate(f.closingDate ?? '') || '—'}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <span
+                                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium text-white ${
+                                          isActive ? 'bg-green-600' : 'bg-gray-500'
+                                        }`}
+                                      >
+                                        {status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>
       </section>
 
-      {/* 2. Live Bidding Board */}
-      <section id="bidding" className="py-16 sm:py-24 px-4 sm:px-6 bg-gray-50">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Live Bidding Board</h2>
-          <p className="text-gray-600 mb-8">Current procurement opportunities. Submit before the closing date.</p>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            {loading ? (
-              <div className="p-8 text-center text-gray-500">Loading…</div>
-            ) : bidding.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No active bidding items at the moment.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-100 border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Project Title</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">ABC (₱)</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Reference No.</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Closing Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bidding.map((row, i) => (
-                      <tr 
-                        key={i} 
-                        onClick={() => navigate('/active-bidding')}
-                        className="border-b border-gray-100 last:border-0 hover:bg-gray-50 cursor-pointer transition-colors"
-                      >
-                        <td className="py-3 px-4 text-gray-800">{row.projectTitle}</td>
-                        <td className="py-3 px-4">{typeof row.abc === 'number' ? row.abc.toLocaleString() : String(row.abc ?? '')}</td>
-                        <td className="py-3 px-4 font-mono text-gray-600">{row.referenceNo}</td>
-                        <td className="py-3 px-4">{formatClosingDate(row.closingDate)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* 3. Procurement Documents (Downloads) */}
-      <section id="downloads" className="py-16 sm:py-24 px-4 sm:px-6 bg-white">
+      {/* 2. Procurement Documents (Downloads) */}
+      <section id="downloads" className="py-16 sm:py-24 px-4 sm:px-6 bg-white border-t border-red-100">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Procurement Documents</h2>
           <p className="text-gray-600 mb-8">Forms and documents required to participate in bidding.</p>
@@ -233,51 +250,51 @@ export default function Landing() {
           ) : docs.length === 0 ? (
             <div className="text-center text-gray-500 py-8">No documents listed yet.</div>
           ) : (
-            <div className="grid sm:grid-cols-3 gap-6">
+            <ul className="border border-red-200 rounded-xl divide-y divide-red-100 overflow-hidden">
               {docs.map((item, i) => (
-                <a key={i} href={item.url || '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col p-6 rounded-xl border border-gray-200 hover:border-red-900 hover:bg-red-50/50 transition-colors group">
-                  <Download className="w-10 h-10 text-red-900 mb-3" />
-                  <h3 className="font-semibold text-gray-900 group-hover:text-red-900">{item.title}</h3>
-                  <p className="mt-2 text-sm text-gray-600">{item.description}</p>
-                  {item.category && <span className="mt-2 text-xs text-gray-500">{item.category}</span>}
-                </a>
+                <li key={i}>
+                  <a
+                    href={item.url || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-4 p-4 hover:bg-red-50/50 transition-colors group"
+                  >
+                    <span className="flex-shrink-0 w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-gray-700 group-hover:bg-red-100">
+                      <Download className="w-5 h-5" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 group-hover:text-gray-800">{item.title || 'Untitled'}</h3>
+                      {item.description && <p className="text-sm text-gray-600 mt-0.5">{item.description}</p>}
+                      {item.category && <span className="inline-block mt-1 text-xs text-gray-500 uppercase tracking-wide">{item.category}</span>}
+                    </div>
+                    <span className="flex-shrink-0 text-sm font-medium text-gray-700 group-hover:underline">Download</span>
+                  </a>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       </section>
 
-      {/* 4. Planning & Reporting */}
-      <section id="planning" className="py-16 sm:py-24 px-4 sm:px-6 bg-gray-50">
+      {/* 4. Planning & Reporting (static, not editable from landing) */}
+      <section id="planning" className="py-16 sm:py-24 px-4 sm:px-6 bg-red-50/30">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Planning & Reporting</h2>
           <p className="text-gray-600 mb-8">Annual plans and historical procurement reports.</p>
-          {loading ? (
-            <div className="text-center text-gray-500">Loading…</div>
-          ) : (
-            <div className="grid sm:grid-cols-2 gap-6">
-              {planning?.app && (planning.app.title || planning.app.description || planning.app.url) && (
-                <a href={planning.app.url || '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col p-6 rounded-xl bg-white border border-gray-200 hover:border-red-900 hover:shadow-md transition-all group">
-                  <h3 className="font-semibold text-gray-900 group-hover:text-red-900">{planning.app.title || 'APP (Annual Procurement Plan)'}</h3>
-                  <p className="mt-2 text-sm text-gray-600">{planning.app.description || 'Planned purchases from January to December.'}</p>
-                </a>
-              )}
-              {planning?.pmr && (planning.pmr.title || planning.pmr.description || planning.pmr.url) && (
-                <a href={planning.pmr.url || '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col p-6 rounded-xl bg-white border border-gray-200 hover:border-red-900 hover:shadow-md transition-all group">
-                  <h3 className="font-semibold text-gray-900 group-hover:text-red-900">{planning.pmr.title || 'PMR (Procurement Monitoring Report)'}</h3>
-                  <p className="mt-2 text-sm text-gray-600">{planning.pmr.description || 'History of awarded bids and spending.'}</p>
-                </a>
-              )}
-              {!loading && !(planning?.app && (planning.app.title || planning.app.description || planning.app.url)) && !(planning?.pmr && (planning.pmr.title || planning.pmr.description || planning.pmr.url)) && (
-                <div className="col-span-2 text-center text-gray-500 py-8">No planning links configured yet.</div>
-              )}
-            </div>
-          )}
+          <div className="grid sm:grid-cols-2 gap-6">
+            <Link to="/annual-procurement-plan" className="flex flex-col p-6 rounded-xl bg-white border border-gray-200 hover:border-red-900 hover:shadow-md transition-all group">
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-800">APP (Annual Procurement Plan)</h3>
+            </Link>
+            <Link to="/bid-winners-awardees" className="flex flex-col p-6 rounded-xl bg-white border border-gray-200 hover:border-red-900 hover:shadow-md transition-all group">
+              <h3 className="font-semibold text-gray-900 group-hover:text-gray-800">Bid Winners & Awardees</h3>
+              <p className="text-sm text-gray-500 mt-1">PMR — How we select and award contracts</p>
+            </Link>
+          </div>
         </div>
       </section>
 
       {/* 5. Vendor Corner */}
-      <section id="vendor" className="py-16 sm:py-24 px-4 sm:px-6 bg-white">
+      <section id="vendor" className="py-16 sm:py-24 px-4 sm:px-6 bg-white border-t border-red-100">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Vendor Corner</h2>
           <p className="text-gray-600 mb-8">Register and manage your participation in WMSU procurement.</p>
@@ -286,16 +303,16 @@ export default function Landing() {
           ) : (
             <div className="grid sm:grid-cols-2 gap-6">
               {vendor?.accreditationTitle && (
-                <a
-                  href={vendor.accreditationUrl || '/login'}
-                  className="flex items-center gap-4 p-6 rounded-xl border-2 border-red-900 bg-red-50 hover:bg-red-100 transition-colors"
+                <Link
+                  to="/accreditation-portal"
+                  className="flex items-center gap-4 p-6 rounded-xl border-2 border-gray-200 hover:border-red-900 hover:bg-gray-50 transition-colors"
                 >
                   <Users className="w-12 h-12 text-red-900 shrink-0" />
                   <div>
                     <h3 className="font-semibold text-gray-900">{vendor.accreditationTitle}</h3>
                     <p className="mt-1 text-sm text-gray-600">{vendor.accreditationDescription}</p>
                   </div>
-                </a>
+                </Link>
               )}
               {vendor?.loginTitle && (
                 <Link
@@ -318,7 +335,7 @@ export default function Landing() {
       </section>
 
       {/* 6. BAC Directory */}
-      <section id="bac" className="py-16 sm:py-24 px-4 sm:px-6 bg-gray-50">
+      <section id="bac" className="py-16 sm:py-24 px-4 sm:px-6 bg-red-50/30">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">BAC Directory</h2>
           <p className="text-gray-600 mb-8">Contact the Bids and Awards Committee Secretariat.</p>
@@ -355,8 +372,10 @@ export default function Landing() {
           )}
         </div>
       </section>
+      </main>
 
-      <footer className="py-8 px-4 bg-red-950 text-red-100 text-center text-sm">
+      {/* Bottom footer – always at bottom of page */}
+      <footer className="mt-auto py-8 px-4 bg-red-900 text-white text-center text-sm border-t border-red-800">
         Western Mindanao State University · Procurement Office · WMSU-Procurement © {new Date().getFullYear()}
       </footer>
     </div>

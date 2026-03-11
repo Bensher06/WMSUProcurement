@@ -66,14 +66,14 @@ const Login = () => {
               />
             </div>
           </Link>
-          <h1 className="text-3xl font-bold text-black">Western Mindanao State University</h1>
-          <p className="text-black mt-2 font-semibold">WMSU-Procurement</p>
-          <p className="text-black mt-1 text-sm">A Smart Research University by 2040</p>
+          <h1 className="text-3xl font-bold text-gray-900">Western Mindanao State University</h1>
+          <p className="text-gray-900 mt-2 font-semibold">WMSU-Procurement</p>
+          <p className="text-gray-600 mt-1 text-sm">A Smart Research University by 2040</p>
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-2xl font-bold text-black text-center mb-6">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 border border-red-100">
+          <h2 className="text-2xl font-bold text-gray-900 text-center mb-6">
             Welcome Back
           </h2>
 
@@ -144,7 +144,7 @@ const Login = () => {
                 setError('');
                 setForgotPasswordSuccess(false);
               }}
-              className="text-sm text-black hover:text-red-900 hover:underline"
+              className="text-sm text-gray-700 hover:text-gray-900 hover:underline"
             >
               Forgot password
             </button>

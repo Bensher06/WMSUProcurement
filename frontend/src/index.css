@@ -113,3 +113,18 @@ html.landing-scrollbar-hidden.scrollbar-visible::-webkit-scrollbar {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+
+/* Detail panel: fade and slide up when content changes */
+@keyframes detail-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-detail-panel-in {
+  animation: detail-panel-in 0.3s ease-out forwards;
+}

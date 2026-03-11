@@ -129,6 +129,15 @@ export interface Database {
           status: 'Pending' | 'Qualified' | 'Disqualified';
           created_at: string;
           updated_at: string;
+          contact_first_name?: string | null;
+          contact_middle_name?: string | null;
+          contact_last_name?: string | null;
+          tin_number?: string | null;
+          business_registration_no?: string | null;
+          business_type?: string | null;
+          portfolio_url?: string | null;
+          project_attending?: string | null;
+          portfolio_urls?: string[] | null;
         };
         Insert: {
           id?: string;
@@ -142,6 +151,15 @@ export interface Database {
           status?: 'Pending' | 'Qualified' | 'Disqualified';
           created_at?: string;
           updated_at?: string;
+          contact_first_name?: string | null;
+          contact_middle_name?: string | null;
+          contact_last_name?: string | null;
+          tin_number?: string | null;
+          business_registration_no?: string | null;
+          business_type?: string | null;
+          portfolio_url?: string | null;
+          project_attending?: string | null;
+          portfolio_urls?: string[] | null;
         };
         Update: {
           name?: string;
@@ -153,6 +171,15 @@ export interface Database {
           image_url?: string | null;
           status?: 'Pending' | 'Qualified' | 'Disqualified';
           updated_at?: string;
+          contact_first_name?: string | null;
+          contact_middle_name?: string | null;
+          contact_last_name?: string | null;
+          tin_number?: string | null;
+          business_registration_no?: string | null;
+          business_type?: string | null;
+          portfolio_url?: string | null;
+          project_attending?: string | null;
+          portfolio_urls?: string[] | null;
         };
       };
       budgets: {
@@ -185,7 +212,7 @@ export interface Database {
           id: string;
           requester_id: string;
           category_id: string | null;
-          vendor_id: string | null;
+          supplier_id: string | null;
           item_name: string;
           description: string | null;
           quantity: number;
@@ -209,11 +236,12 @@ export interface Database {
           id?: string;
           requester_id: string;
           category_id?: string | null;
-          vendor_id?: string | null;
+          supplier_id?: string | null;
           item_name: string;
           description?: string | null;
           quantity?: number;
           unit_price: number;
+          total_price?: number;
           status?: RequestStatus;
           rejection_reason?: string | null;
           approved_by?: string | null;
@@ -231,7 +259,7 @@ export interface Database {
         Update: {
           requester_id?: string;
           category_id?: string | null;
-          vendor_id?: string | null;
+          supplier_id?: string | null;
           item_name?: string;
           description?: string | null;
           quantity?: number;
@@ -348,7 +376,7 @@ export type BudgetFundSource = Database['public']['Tables']['budget_fund_sources
 export type RequestWithRelations = Request & {
   requester?: Profile;
   category?: Category;
-  vendor?: Vendor;
+  supplier?: Supplier;
   delegated_to_profile?: Profile;
 };
 
@@ -373,16 +401,69 @@ export type LandingDocumentItem = {
   url: string;
   category: string;
 };
+/** Single featured procurement item (matches mock data structure) for Transparency Seal */
+export type TransparencyFeaturedItem = {
+  projectTitle: string;
+  referenceNo: string;
+  abc: number;
+  closingDate: string;
+  openingDate?: string;
+  location?: string;
+  description?: string;
+  requirements?: string[];
+  contactPerson?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  status?: string;
+};
+
+/** Single saved transparency seal entry (mission + featured item); id set when loaded from DB */
+export type TransparencySealEntry = {
+  id?: string;
+  mission?: string;
+  featuredItem?: TransparencyFeaturedItem;
+};
+
+/** Row from transparency_seal_entries table (snake_case) */
+export type TransparencySealEntryRow = {
+  id: string;
+  created_at: string;
+  mission: string | null;
+  project_title: string;
+  reference_no: string;
+  abc: number;
+  closing_date: string | null;
+  opening_date: string | null;
+  location: string | null;
+  description: string | null;
+  requirements: string[];
+  contact_person: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  status: string;
+  display_order: number;
+};
+
 export type LandingTransparency = {
-  mission: string;
-  ctaPrimary: { label: string; url: string; description?: string };
-  ctaSecondary: { label: string; url: string; description?: string };
+  mission?: string;
+  featuredItem?: TransparencyFeaturedItem;
+  /** List of saved entries; newest appended when user clicks "Add transparency seal" */
+  items?: TransparencySealEntry[];
 };
 export type LandingBidding = { rows: LandingBiddingRow[] };
 export type LandingDocuments = { items: LandingDocumentItem[] };
+
+/** Single APP planned item (admin adds these; shown on annual-procurement-plan by month) */
+export type AppPlannedItem = {
+  projectTitle: string;
+  description: string;
+  budget: number;
+  month: number; // 0 = January, 11 = December
+};
+
 export type LandingPlanning = {
-  app: { title: string; description: string; url: string };
-  pmr: { title: string; description: string; url: string };
+  appItems?: AppPlannedItem[];
+  pmr?: { title?: string; description?: string; url?: string };
 };
 export type LandingVendor = {
   accreditationTitle: string;
@@ -406,5 +487,38 @@ export type LandingContent = {
   planning?: LandingPlanning;
   vendor?: LandingVendor;
   bac?: LandingBac;
+};
+
+/** Single bid bulletin attachment (name + url) */
+export type BidBulletinAttachment = { name: string; url: string };
+
+/** Bid bulletin for Supplemental / Bid Bulletins (admin form + public list) */
+export type BidBulletin = {
+  id?: string;
+  type: string;
+  status: string;
+  title: string;
+  referenceNo: string;
+  date: string;
+  relatedTo?: string;
+  description?: string;
+  changes: string[];
+  attachments: BidBulletinAttachment[];
+};
+
+/** Row from bid_bulletins table */
+export type BidBulletinRow = {
+  id: string;
+  created_at: string;
+  type: string;
+  status: string;
+  title: string;
+  reference_no: string;
+  date: string | null;
+  related_to: string | null;
+  description: string | null;
+  changes: string[];
+  attachments: BidBulletinAttachment[];
+  display_order: number;
 };
 

@@ -170,8 +170,8 @@ const Requests = () => {
                     <td className="px-6 py-4">
                       <div>
                         <p className="font-medium text-wmsu-black">{request.item_name}</p>
-                        {request.vendor && (
-                          <p className="text-sm text-gray-500">{request.vendor.name}</p>
+                        {request.supplier && (
+                          <p className="text-sm text-gray-500">{request.supplier.name}</p>
                         )}
                       </div>
                     </td>
@@ -204,7 +204,7 @@ const Requests = () => {
                             </button>
                             <button
                               onClick={() => handleDelete(request.id)}
-                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              className="p-2 text-[#98111E] hover:bg-red-50 rounded-lg transition-colors"
                               title="Delete"
                             >
                               <Trash2 className="w-4 h-4" />

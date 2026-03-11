@@ -43,7 +43,7 @@ interface DashboardStats {
 }
 
 const Dashboard = () => {
-  const { profile, canApprove } = useAuth();
+  const { profile, canApprove, isAdmin } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -91,21 +91,23 @@ const Dashboard = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-wmsu-black">Dashboard</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-base text-gray-500 mt-1">Welcome back, {profile?.full_name}</p>
         </div>
-        <Link
-          to="/requests/new"
-          className="px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition-colors font-medium"
-        >
-          New Request
-        </Link>
+        {!isAdmin() && (
+          <Link
+            to="/requests/new"
+            className="px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition-colors font-medium"
+          >
+            New Request
+          </Link>
+        )}
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Budget: for faculty = approved budget for them; for admin/dept = university budget */}
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+        <div className="bg-white rounded-xl shadow-sm p-6 border border-red-100">
           <div className="flex items-center justify-between mb-4">
             <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
               isBudgetLow ? 'bg-orange-100' : 'bg-green-100'
@@ -140,7 +142,7 @@ const Dashboard = () => {
 
         {/* Pending Approvals */}
         {canApprove() && (
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-red-100">
             <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
                 <Clock className="w-6 h-6 text-yellow-600" />
@@ -150,7 +152,7 @@ const Dashboard = () => {
             <p className="text-2xl font-bold text-wmsu-black">{stats?.pendingApprovals || 0}</p>
             <Link 
               to="/approvals"
-              className="mt-3 text-sm text-red-900 hover:text-red-800 inline-flex items-center gap-1"
+              className="mt-3 text-sm text-gray-700 hover:text-gray-900 inline-flex items-center gap-1"
             >
               View all <ArrowRight className="w-4 h-4" />
             </Link>
@@ -158,7 +160,7 @@ const Dashboard = () => {
         )}
 
         {/* Monthly Spending */}
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+        <div className="bg-white rounded-xl shadow-sm p-6 border border-red-100">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
               <TrendingUp className="w-6 h-6 text-purple-600" />
@@ -174,7 +176,7 @@ const Dashboard = () => {
         </div>
 
         {/* Total Requests */}
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+        <div className="bg-white rounded-xl shadow-sm p-6 border border-red-100">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
               <FileText className="w-6 h-6 text-blue-600" />
@@ -184,17 +186,17 @@ const Dashboard = () => {
           <p className="text-2xl font-bold text-wmsu-black">{stats?.totalRequests || 0}</p>
           <Link 
             to="/requests"
-            className="mt-3 text-sm text-red-900 hover:text-red-800 inline-flex items-center gap-1"
-          >
-            View all <ArrowRight className="w-4 h-4" />
-          </Link>
+className="mt-3 text-sm text-gray-700 hover:text-gray-900 inline-flex items-center gap-1"
+            >
+              View all <ArrowRight className="w-4 h-4" />
+            </Link>
         </div>
       </div>
 
       {/* Request progress (faculty: pipeline + per-request progress) */}
       {!canApprove() && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-wmsu-black mb-4 flex items-center gap-2">
+        <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <CircleDot className="w-5 h-5 text-red-900" />
             Your request progress
           </h3>
@@ -236,8 +238,8 @@ const Dashboard = () => {
       {/* Request Status Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Status Overview */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-wmsu-black mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
             {canApprove() ? 'Request Status Overview' : 'Status breakdown'}
           </h3>
           <div className="grid grid-cols-2 gap-4">
@@ -254,12 +256,12 @@ const Dashboard = () => {
         </div>
 
         {/* Recent Requests */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-wmsu-black">Recent Requests</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Recent Requests</h3>
             <Link 
               to="/requests"
-              className="text-sm text-red-900 hover:text-red-800"
+              className="text-sm text-gray-700 hover:text-gray-900"
             >
               View all
             </Link>

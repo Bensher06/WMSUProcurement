@@ -459,7 +459,7 @@ const RequestDetail = () => {
             </div>
 
             {/* Vendor Information Card */}
-            {request.vendor && (
+            {request.supplier && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100">
                   <h2 className="text-lg font-semibold text-wmsu-black flex items-center gap-2">
@@ -473,30 +473,30 @@ const RequestDetail = () => {
                       <Building2 className="w-7 h-7 text-red-900" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-wmsu-black">{request.vendor.name}</h3>
+                      <h3 className="text-lg font-semibold text-wmsu-black">{request.supplier.name}</h3>
                       <div className="mt-3 space-y-2">
-                        {request.vendor.contact_person && (
+                        {request.supplier.contact_person && (
                           <div className="flex items-center gap-2 text-sm text-slate-600">
                             <User className="w-4 h-4 text-slate-400" />
-                            {request.vendor.contact_person}
+                            {request.supplier.contact_person}
                           </div>
                         )}
-                        {request.vendor.contact_number && (
+                        {request.supplier.contact_number && (
                           <div className="flex items-center gap-2 text-sm text-slate-600">
                             <Phone className="w-4 h-4 text-slate-400" />
-                            {request.vendor.contact_number}
+                            {request.supplier.contact_number}
                           </div>
                         )}
-                        {request.vendor.email && (
+                        {request.supplier.email && (
                           <div className="flex items-center gap-2 text-sm text-slate-600">
                             <Mail className="w-4 h-4 text-slate-400" />
-                            {request.vendor.email}
+                            {request.supplier.email}
                           </div>
                         )}
-                        {request.vendor.address && (
+                        {request.supplier.address && (
                           <div className="flex items-center gap-2 text-sm text-slate-600">
                             <MapPin className="w-4 h-4 text-slate-400" />
-                            {request.vendor.address}
+                            {request.supplier.address}
                           </div>
                         )}
                       </div>

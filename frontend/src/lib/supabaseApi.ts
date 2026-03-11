@@ -10,7 +10,13 @@ import type {
   RequestStatus,
   CommentWithAuthor,
   ActivityWithActor,
-  LandingContent
+  LandingContent,
+  TransparencySealEntry,
+  TransparencySealEntryRow,
+  TransparencyFeaturedItem,
+  BidBulletin,
+  BidBulletinRow,
+  BidBulletinAttachment
 } from '../types/database';
 
 // =====================================================
@@ -451,7 +457,7 @@ export const requestsAPI = {
         *,
         requester:profiles!requester_id(*),
         category:categories(*),
-        vendor:vendors(*)
+        supplier:suppliers(*)
       `)
       .order('created_at', { ascending: false });
 
@@ -474,7 +480,7 @@ export const requestsAPI = {
         *,
         requester:profiles!requester_id(*),
         category:categories(*),
-        vendor:vendors(*)
+        supplier:suppliers(*)
       `)
       .eq('requester_id', user.id)
       .order('created_at', { ascending: false });
@@ -490,7 +496,7 @@ export const requestsAPI = {
         *,
         requester:profiles!requester_id(*),
         category:categories(*),
-        vendor:vendors(*)
+        supplier:suppliers(*)
       `)
       .eq('status', 'Pending')
       .order('created_at', { ascending: true });
@@ -506,7 +512,7 @@ export const requestsAPI = {
         *,
         requester:profiles!requester_id(*),
         category:categories(*),
-        vendor:vendors(*),
+        supplier:suppliers(*),
         delegated_to_profile:profiles!delegated_to(*)
       `)
       .eq('id', id)
@@ -518,7 +524,7 @@ export const requestsAPI = {
 
   create: async (request: {
     category_id?: string;
-    vendor_id?: string;
+    supplier_id?: string;
     item_name: string;
     description?: string;
     quantity: number;
@@ -528,10 +534,12 @@ export const requestsAPI = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
+    const total_price = request.quantity * request.unit_price;
     const { data, error } = await supabase
       .from('requests')
       .insert({
         ...request,
+        total_price,
         requester_id: user.id,
         status: request.status || 'Draft'
       })
@@ -797,19 +805,207 @@ export const dashboardAPI = {
 };
 
 // =====================================================
+// TRANSPARENCY SEAL ENTRIES (new table)
+// =====================================================
+function rowToEntry(r: TransparencySealEntryRow): TransparencySealEntry {
+  return {
+    mission: r.mission ?? undefined,
+    featuredItem: {
+      projectTitle: r.project_title,
+      referenceNo: r.reference_no,
+      abc: r.abc,
+      closingDate: r.closing_date ?? '',
+      openingDate: r.opening_date ?? undefined,
+      location: r.location ?? undefined,
+      description: r.description ?? undefined,
+      requirements: r.requirements ?? [],
+      contactPerson: r.contact_person ?? undefined,
+      contactEmail: r.contact_email ?? undefined,
+      contactPhone: r.contact_phone ?? undefined,
+      status: r.status
+    }
+  };
+}
+
+function entryToRow(entry: TransparencySealEntry, displayOrder = 0): Omit<TransparencySealEntryRow, 'id' | 'created_at'> {
+  const f = entry.featuredItem ?? {};
+  return {
+    mission: entry.mission ?? null,
+    project_title: f.projectTitle ?? '',
+    reference_no: f.referenceNo ?? '',
+    abc: typeof f.abc === 'number' && !Number.isNaN(f.abc) ? f.abc : Math.floor(Number(f.abc)) || 0,
+    closing_date: f.closingDate && /^\d{4}-\d{2}-\d{2}$/.test(String(f.closingDate)) ? String(f.closingDate) : null,
+    opening_date: f.openingDate && /^\d{4}-\d{2}-\d{2}$/.test(String(f.openingDate)) ? String(f.openingDate) : null,
+    location: f.location ?? null,
+    description: f.description ?? null,
+    requirements: Array.isArray(f.requirements) ? f.requirements : [],
+    contact_person: f.contactPerson ?? null,
+    contact_email: f.contactEmail ?? null,
+    contact_phone: f.contactPhone ?? null,
+    status: f.status ?? 'Active',
+    display_order: displayOrder
+  };
+}
+
+export const transparencySealAPI = {
+  getAll: async (): Promise<TransparencySealEntry[]> => {
+    const { data, error } = await supabase
+      .from('transparency_seal_entries')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((r) => rowToEntry(r as TransparencySealEntryRow));
+  },
+
+  getAllRows: async (): Promise<(TransparencySealEntryRow & { _entry?: TransparencySealEntry })[]> => {
+    const { data, error } = await supabase
+      .from('transparency_seal_entries')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((r) => {
+      const row = r as TransparencySealEntryRow;
+      return { ...row, _entry: rowToEntry(row) };
+    });
+  },
+
+  create: async (entry: TransparencySealEntry): Promise<TransparencySealEntry> => {
+    const rows = await supabase.from('transparency_seal_entries').select('display_order').order('display_order', { ascending: false }).limit(1);
+    const nextOrder = (rows.data?.[0] as { display_order?: number } | undefined)?.display_order ?? 0;
+    const payload = entryToRow(entry, nextOrder + 1);
+    const { data, error } = await supabase.from('transparency_seal_entries').insert(payload).select().single();
+    if (error) throw error;
+    return rowToEntry(data as TransparencySealEntryRow);
+  },
+
+  update: async (id: string, entry: TransparencySealEntry): Promise<void> => {
+    const payload = entryToRow(entry, 0);
+    const { display_order: _, ...updatePayload } = payload;
+    const { error } = await supabase.from('transparency_seal_entries').update(updatePayload).eq('id', id);
+    if (error) throw error;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('transparency_seal_entries').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
+// =====================================================
+// BID BULLETINS API
+// =====================================================
+const BID_BULLETIN_BUCKET = 'bid-bulletin-attachments';
+
+function rowToBidBulletin(r: BidBulletinRow): BidBulletin & { id: string } {
+  return {
+    id: r.id,
+    type: r.type,
+    status: r.status,
+    title: r.title,
+    referenceNo: r.reference_no,
+    date: r.date ?? '',
+    relatedTo: r.related_to ?? undefined,
+    description: r.description ?? undefined,
+    changes: r.changes ?? [],
+    attachments: Array.isArray(r.attachments) ? r.attachments : []
+  };
+}
+
+export const bidBulletinsAPI = {
+  getAll: async (): Promise<(BidBulletin & { id: string })[]> => {
+    const { data, error } = await supabase
+      .from('bid_bulletins')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((r) => rowToBidBulletin(r as BidBulletinRow));
+  },
+
+  create: async (bulletin: BidBulletin): Promise<BidBulletin & { id: string }> => {
+    const { data: maxOrder } = await supabase
+      .from('bid_bulletins')
+      .select('display_order')
+      .order('display_order', { ascending: false })
+      .limit(1)
+      .single();
+    const order = (maxOrder as { display_order?: number } | null)?.display_order ?? 0;
+    const payload = {
+      type: bulletin.type,
+      status: bulletin.status,
+      title: bulletin.title,
+      reference_no: bulletin.referenceNo,
+      date: bulletin.date || null,
+      related_to: bulletin.relatedTo || null,
+      description: bulletin.description || null,
+      changes: bulletin.changes ?? [],
+      attachments: bulletin.attachments ?? [],
+      display_order: order + 1
+    };
+    const { data, error } = await supabase.from('bid_bulletins').insert(payload).select().single();
+    if (error) throw error;
+    return rowToBidBulletin(data as BidBulletinRow);
+  },
+
+  update: async (id: string, bulletin: BidBulletin): Promise<void> => {
+    const { error } = await supabase
+      .from('bid_bulletins')
+      .update({
+        type: bulletin.type,
+        status: bulletin.status,
+        title: bulletin.title,
+        reference_no: bulletin.referenceNo,
+        date: bulletin.date || null,
+        related_to: bulletin.relatedTo || null,
+        description: bulletin.description || null,
+        changes: bulletin.changes ?? [],
+        attachments: bulletin.attachments ?? []
+      })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('bid_bulletins').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  uploadAttachment: async (bulletinId: string, file: File): Promise<string> => {
+    const ext = file.name.split('.').pop() || 'bin';
+    const path = `${bulletinId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { data, error } = await supabase.storage.from(BID_BULLETIN_BUCKET).upload(path, file, { upsert: false });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from(BID_BULLETIN_BUCKET).getPublicUrl(data.path);
+    return urlData.publicUrl;
+  }
+};
+
+// =====================================================
 // LANDING PAGE API (public read; admin write)
 // =====================================================
 export const landingAPI = {
   getAll: async (): Promise<LandingContent> => {
-    const { data, error } = await supabase
-      .from('landing_page')
-      .select('section, data')
-      .order('section');
-    if (error) throw error;
+    const [pageRes, entriesRes] = await Promise.all([
+      supabase.from('landing_page').select('section, data').order('section'),
+      supabase.from('transparency_seal_entries').select('*').order('display_order', { ascending: true }).order('created_at', { ascending: true })
+    ]);
+    if (pageRes.error) throw pageRes.error;
     const out: LandingContent = {};
-    (data || []).forEach((row: { section: string; data: unknown }) => {
+    (pageRes.data || []).forEach((row: { section: string; data: unknown }) => {
       out[row.section as keyof LandingContent] = row.data as never;
     });
+    if (entriesRes.data && entriesRes.data.length > 0) {
+      const items = (entriesRes.data as TransparencySealEntryRow[]).map((row) => ({ ...rowToEntry(row), id: row.id }));
+      const last = items[items.length - 1];
+      out.transparency = {
+        ...(out.transparency as object),
+        items,
+        mission: items[0]?.mission ?? (out.transparency as { mission?: string })?.mission,
+        featuredItem: last?.featuredItem ?? (out.transparency as { featuredItem?: TransparencyFeaturedItem })?.featuredItem
+      } as never;
+    }
     return out;
   },
 

@@ -1,3 +1,4 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
@@ -9,14 +10,6 @@ import BidBulletins from './pages/BidBulletins';
 import SupplierRegister from './pages/SupplierRegister';
 import RequestProgress from './pages/RequestProgress';
 import Dashboard from './pages/Dashboard';
-
-function RootRoute() {
-  const { isAuthenticated, isAdmin } = useAuth();
-  if (!isAuthenticated) return <Landing />;
-  if (isAdmin()) return <Navigate to="/dashboard" replace />;
-  return <Navigate to="/request-progress" replace />;
-}
-
 import Requests from './pages/Requests';
 import NewRequest from './pages/NewRequest';
 import RequestDetail from './pages/RequestDetail';
@@ -25,8 +18,18 @@ import Approvals from './pages/Approvals';
 import ManageLanding from './pages/ManageLanding';
 import Users from './pages/Users';
 import Vendors from './pages/Vendors';
+import AccreditationPortal from './pages/AccreditationPortal';
+import AnnualProcurementPlan from './pages/AnnualProcurementPlan';
+import BidWinnersAwardees from './pages/BidWinnersAwardees';
 import Budget from './pages/Budget';
 import BudgetFundSources from './pages/BudgetFundSources';
+
+function RootRoute() {
+  const { isAuthenticated, isAdmin } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/accreditation-portal" replace />;
+  if (isAdmin()) return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/request-progress" replace />;
+}
 
 function App() {
   return (
@@ -39,6 +42,9 @@ function App() {
           <Route path="/active-bidding" element={<ActiveBidding />} />
           <Route path="/bid-bulletins" element={<BidBulletins />} />
           <Route path="/supplier-register" element={<SupplierRegister />} />
+          <Route path="/accreditation-portal" element={<AccreditationPortal />} />
+          <Route path="/annual-procurement-plan" element={<AnnualProcurementPlan />} />
+          <Route path="/bid-winners-awardees" element={<BidWinnersAwardees />} />
           <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />
           
