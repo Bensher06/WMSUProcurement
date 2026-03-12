@@ -16,7 +16,9 @@ import type {
   TransparencyFeaturedItem,
   BidBulletin,
   BidBulletinRow,
-  BidBulletinAttachment
+  BidBulletinAttachment,
+  BidWinner,
+  BidWinnerWithSupplier
 } from '../types/database';
 
 // =====================================================
@@ -1082,6 +1084,68 @@ export const bidBulletinsAPI = {
     if (error) throw error;
     const { data: urlData } = supabase.storage.from(BID_BULLETIN_BUCKET).getPublicUrl(data.path);
     return urlData.publicUrl;
+  }
+};
+
+// =====================================================
+// BID WINNERS / AWARDEES (public read; admin insert/update/delete)
+// =====================================================
+export const bidWinnersAPI = {
+  getAll: async (): Promise<BidWinnerWithSupplier[]> => {
+    const { data, error } = await supabase
+      .from('bid_winners')
+      .select('*, winner_supplier:suppliers!winner_supplier_id(id, name)')
+      .order('display_order', { ascending: true })
+      .order('date_awarded', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as BidWinnerWithSupplier[];
+  },
+
+  create: async (payload: {
+    request_id?: string | null;
+    project_title: string;
+    reference_no?: string | null;
+    winner_supplier_id?: string | null;
+    winner_name?: string | null;
+    contract_amount: number;
+    date_awarded?: string | null;
+    notes?: string | null;
+    display_order?: number;
+  }): Promise<BidWinner> => {
+    const { data, error } = await supabase
+      .from('bid_winners')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as BidWinner;
+  },
+
+  update: async (id: string, payload: Partial<{
+    request_id: string | null;
+    project_title: string;
+    reference_no: string | null;
+    winner_supplier_id: string | null;
+    winner_name: string | null;
+    contract_amount: number;
+    date_awarded: string | null;
+    notes: string | null;
+    display_order: number;
+  }>): Promise<BidWinner> => {
+    const { data, error } = await supabase
+      .from('bid_winners')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as BidWinner;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const { error } = await supabase.from('bid_winners').delete().eq('id', id);
+    if (error) throw error;
   }
 };
 

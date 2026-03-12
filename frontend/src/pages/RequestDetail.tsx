@@ -33,7 +33,9 @@ import {
   X,
   Phone,
   Mail,
-  MapPin
+  MapPin,
+  Pencil,
+  Save
 } from 'lucide-react';
 import { CenteredAlert } from '../components/CenteredAlert';
 
@@ -64,6 +66,9 @@ const RequestDetail = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
+  const [isEditingRequest, setIsEditingRequest] = useState(false);
+  const [editForm, setEditForm] = useState({ item_name: '', description: '', quantity: 1, unit_price: '' });
+  const [saveEditLoading, setSaveEditLoading] = useState(false);
 
   useEffect(() => {
     if (id) fetchAllData();
@@ -341,18 +346,36 @@ const RequestDetail = () => {
                 )}
               </div>
             )}
-            {/* Faculty actions: Negotiating (agree) and Delivering (confirm received) */}
+            {/* Faculty actions: Negotiating (edit + agree) and Delivering (confirm received) */}
             {!canApprove() && request.requester_id === profile?.id && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {request.status === 'Negotiating' && (
-                  <button
-                    onClick={() => handleAction('agree')}
-                    disabled={actionLoading}
-                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
-                  >
-                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                    I agree to proceed
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditForm({
+                          item_name: request.item_name,
+                          description: request.description || '',
+                          quantity: request.quantity,
+                          unit_price: String(request.unit_price)
+                        });
+                        setIsEditingRequest(true);
+                      }}
+                      disabled={actionLoading}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      Edit request
+                    </button>
+                    <button
+                      onClick={() => handleAction('agree')}
+                      disabled={actionLoading}
+                      className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      I agree to proceed
+                    </button>
+                  </>
                 )}
                 {request.status === 'Received' && (
                   <button
@@ -469,87 +492,188 @@ const RequestDetail = () => {
 
             {/* Item Details Card */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-wmsu-black">Request Details</h2>
+                {isEditingRequest && (
+                  <span className="text-sm text-amber-700 font-medium">Editing — save or cancel below</span>
+                )}
               </div>
               <div className="p-6">
-                {/* Price Summary */}
-                <div className="bg-slate-50 rounded-xl p-5 mb-6">
-                  <div className="grid grid-cols-3 gap-4">
+                {isEditingRequest ? (
+                  /* Faculty edit form (when status is Negotiating) */
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const qty = Math.max(1, Math.floor(Number(editForm.quantity)) || 1);
+                      const price = Math.max(0, parseFloat(editForm.unit_price) || 0);
+                      if (!editForm.item_name.trim()) {
+                        setError('Item name is required');
+                        return;
+                      }
+                      setSaveEditLoading(true);
+                      setError('');
+                      try {
+                        const updated = await requestsAPI.update(id!, {
+                          item_name: editForm.item_name.trim(),
+                          description: editForm.description.trim() || null,
+                          quantity: qty,
+                          unit_price: price,
+                          total_price: qty * price
+                        });
+                        setRequest((prev) => (prev ? { ...prev, ...updated } : null));
+                        setIsEditingRequest(false);
+                      } catch (err: any) {
+                        setError(err?.message || 'Failed to save changes');
+                      } finally {
+                        setSaveEditLoading(false);
+                      }
+                    }}
+                    className="space-y-4"
+                  >
                     <div>
-                      <p className="text-sm text-slate-500">Quantity</p>
-                      <p className="text-xl font-bold text-wmsu-black">{request.quantity}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-slate-500">Unit Price</p>
-                      <p className="text-xl font-bold text-wmsu-black">₱{request.unit_price.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-slate-500">Total Amount</p>
-                      <p className="text-2xl font-bold text-red-900">₱{request.total_price.toLocaleString()}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FolderOpen className="w-5 h-5 text-violet-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-slate-500">Category</p>
-                      <p className="font-medium text-wmsu-black">{request.category?.name || 'Not specified'}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <User className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-slate-500">Requester</p>
-                      <p className="font-medium text-wmsu-black">{request.requester?.full_name}</p>
-                      <p className="text-sm text-slate-400">{request.requester?.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Calendar className="w-5 h-5 text-amber-600" />
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Item name *</label>
+                      <input
+                        type="text"
+                        value={editForm.item_name}
+                        onChange={(e) => setEditForm((f) => ({ ...f, item_name: e.target.value }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                        required
+                      />
                     </div>
                     <div>
-                      <p className="text-sm text-slate-500">Submitted</p>
-                      <p className="font-medium text-wmsu-black">{formatDate(request.created_at)}</p>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                      <textarea
+                        value={editForm.description}
+                        onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                      />
                     </div>
-                  </div>
-
-                  {request.delegated_to_profile && (
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <UserPlus className="w-5 h-5 text-red-900" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Quantity *</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={editForm.quantity}
+                          onChange={(e) => setEditForm((f) => ({ ...f, quantity: e.target.value }))}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                        />
                       </div>
                       <div>
-                        <p className="text-sm text-slate-500">Delegated To</p>
-                        <p className="font-medium text-wmsu-black">{request.delegated_to_profile.full_name}</p>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Unit price (₱) *</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={editForm.unit_price}
+                          onChange={(e) => setEditForm((f) => ({ ...f, unit_price: e.target.value }))}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                        />
                       </div>
                     </div>
-                  )}
-                </div>
+                    <p className="text-sm text-slate-500">
+                      Total: ₱{((Math.max(1, Math.floor(Number(editForm.quantity)) || 1) * (parseFloat(editForm.unit_price) || 0)).toLocaleString()}
+                    </p>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="submit"
+                        disabled={saveEditLoading}
+                        className="px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 font-medium flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {saveEditLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Save changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingRequest(false)}
+                        className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    {/* Price Summary */}
+                    <div className="bg-slate-50 rounded-xl p-5 mb-6">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-sm text-slate-500">Quantity</p>
+                          <p className="text-xl font-bold text-wmsu-black">{request.quantity}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-500">Unit Price</p>
+                          <p className="text-xl font-bold text-wmsu-black">₱{request.unit_price.toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-500">Total Amount</p>
+                          <p className="text-2xl font-bold text-red-900">₱{request.total_price.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    </div>
 
-                {/* Description */}
-                {request.description && (
-                  <div className="mt-6 pt-6 border-t border-slate-100">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-5 h-5 text-slate-600" />
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FolderOpen className="w-5 h-5 text-violet-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-500">Category</p>
+                          <p className="font-medium text-wmsu-black">{request.category?.name || 'Not specified'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Description</p>
-                        <p className="text-slate-700 mt-1 leading-relaxed">{request.description}</p>
+
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <User className="w-5 h-5 text-emerald-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-500">Requester</p>
+                          <p className="font-medium text-wmsu-black">{request.requester?.full_name}</p>
+                          <p className="text-sm text-slate-400">{request.requester?.email}</p>
+                        </div>
                       </div>
+
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <Calendar className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-500">Submitted</p>
+                          <p className="font-medium text-wmsu-black">{formatDate(request.created_at)}</p>
+                        </div>
+                      </div>
+
+                      {request.delegated_to_profile && (
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <UserPlus className="w-5 h-5 text-red-900" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-500">Delegated To</p>
+                            <p className="font-medium text-wmsu-black">{request.delegated_to_profile.full_name}</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
+
+                    {/* Description */}
+                    {request.description && (
+                      <div className="mt-6 pt-6 border-t border-slate-100">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-5 h-5 text-slate-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-500">Description</p>
+                            <p className="text-slate-700 mt-1 leading-relaxed">{request.description}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

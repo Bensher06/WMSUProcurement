@@ -1,59 +1,24 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../types/database';
+import { bidWinnersAPI } from '../lib/supabaseApi';
+import type { BidWinnerWithSupplier } from '../types/database';
 import { ArrowLeft, Award, CheckCircle, ListOrdered, FileCheck, Loader2, ChevronDown } from 'lucide-react';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-const getAnonClient = () =>
-  createClient<Database>(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
-    }
-  });
-
-type AwardedRequest = {
-  id: string;
-  item_name: string;
-  total_price: number;
-  approved_at: string | null;
-  status: string;
-  supplier: { name: string } | null;
-};
-
 export default function BidWinnersAwardees() {
-  const [awardees, setAwardees] = useState<AwardedRequest[]>([]);
+  const [awardees, setAwardees] = useState<BidWinnerWithSupplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [processExpanded, setProcessExpanded] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    const client = getAnonClient();
-    client
-      .from('requests')
-      .select('id, item_name, total_price, approved_at, status, supplier:suppliers!supplier_id(name)')
-      .not('supplier_id', 'is', null)
-      .order('approved_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setAwardees([]);
-          return;
-        }
-        setAwardees((data as AwardedRequest[]) ?? []);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    bidWinnersAPI
+      .getAll()
+      .then(setAwardees)
+      .catch(() => setAwardees([]))
+      .finally(() => setLoading(false));
   }, []);
+
+  const winnerDisplay = (row: BidWinnerWithSupplier) =>
+    (row.winner_supplier as { name?: string } | null)?.name ?? row.winner_name ?? '—';
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -176,41 +141,29 @@ export default function BidWinnersAwardees() {
                     <thead>
                       <tr className="border-b border-gray-200">
                         <th className="py-3 px-2 font-semibold text-gray-900">Project / Item</th>
+                        <th className="py-3 px-2 font-semibold text-gray-900">Reference no.</th>
                         <th className="py-3 px-2 font-semibold text-gray-900">ABC (₱)</th>
                         <th className="py-3 px-2 font-semibold text-gray-900">Awarded to</th>
                         <th className="py-3 px-2 font-semibold text-gray-900">Date</th>
-                        <th className="py-3 px-2 font-semibold text-gray-900">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {awardees.map((row) => (
                         <tr key={row.id} className="border-b border-gray-100 hover:bg-red-50/30">
-                          <td className="py-3 px-2 text-gray-900">{row.item_name}</td>
+                          <td className="py-3 px-2 text-gray-900">{row.project_title}</td>
+                          <td className="py-3 px-2 text-gray-600 text-sm">{row.reference_no ?? '—'}</td>
                           <td className="py-3 px-2 font-medium text-gray-800">
-                            ₱{Number(row.total_price).toLocaleString()}
+                            ₱{Number(row.contract_amount).toLocaleString()}
                           </td>
-                          <td className="py-3 px-2 text-gray-700">{row.supplier?.name ?? '—'}</td>
+                          <td className="py-3 px-2 text-gray-700">{winnerDisplay(row)}</td>
                           <td className="py-3 px-2 text-gray-600 text-sm">
-                            {row.approved_at
-                              ? new Date(row.approved_at).toLocaleDateString('en-PH', {
+                            {row.date_awarded
+                              ? new Date(row.date_awarded).toLocaleDateString('en-PH', {
                                   year: 'numeric',
                                   month: 'short',
                                   day: 'numeric'
                                 })
                               : '—'}
-                          </td>
-                          <td className="py-3 px-2">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                row.status === 'Completed'
-                                  ? 'bg-green-100 text-green-800'
-                                  : row.status === 'Ordered' || row.status === 'Received'
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-gray-100 text-gray-700'
-                              }`}
-                            >
-                              {row.status}
-                            </span>
                           </td>
                         </tr>
                       ))}

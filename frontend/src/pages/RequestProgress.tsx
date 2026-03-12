@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { dashboardAPI } from '../lib/supabaseApi';
+import { dashboardAPI, requestsAPI } from '../lib/supabaseApi';
 import StatusBadge from '../components/StatusBadge';
-import { CircleDot, Loader2, FileText, Wallet, RefreshCw, ChevronRight } from 'lucide-react';
+import { CircleDot, Loader2, FileText, Wallet, RefreshCw, ChevronRight, Check } from 'lucide-react';
 import { CenteredAlert } from '../components/CenteredAlert';
 
 const REQUEST_PROGRESS_STAGES: { key: string; label: string }[] = [
@@ -33,6 +33,7 @@ const RequestProgress = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [hiddenCompletedRequestId, setHiddenCompletedRequestId] = useState<string | null>(null);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const fetchStats = async (silent = false) => {
     if (!silent) {
@@ -200,37 +201,73 @@ const RequestProgress = () => {
             stats.recentRequests.filter((r: any) => r.id !== hiddenCompletedRequestId).map((request: any) => {
               const stepIndex = getStatusStepIndex(request.status);
               const totalSteps = REQUEST_PROGRESS_STAGES.length;
+              const isNegotiating = request.status === 'Negotiating';
+              const hasNotes = isNegotiating && request.negotiating_notes?.trim();
               return (
-                <Link
-                  key={request.id}
-                  to={`/requests/${request.id}`}
-                  className="block p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100 cursor-pointer"
-                  title="View request progress"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-wmsu-black truncate">{request.item_name}</p>
-                      <p className="text-sm text-gray-500">
-                        {request.category?.name} • ₱{request.total_price?.toLocaleString()}
-                      </p>
-                      <div className="mt-3 flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden flex">
-                          {REQUEST_PROGRESS_STAGES.map((_, i) => (
-                            <div
-                              key={i}
-                              className={`flex-1 ${i <= stepIndex ? 'bg-red-600' : 'bg-gray-200'}`}
-                              style={{ minWidth: 4 }}
-                            />
-                          ))}
+                <div key={request.id} className="rounded-lg border border-gray-100 overflow-hidden">
+                  <Link
+                    to={`/requests/${request.id}`}
+                    className="block p-4 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                    title="View request progress"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-wmsu-black truncate">{request.item_name}</p>
+                        <p className="text-sm text-gray-500">
+                          {request.category?.name} • ₱{request.total_price?.toLocaleString()}
+                        </p>
+                        <div className="mt-3 flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden flex">
+                            {REQUEST_PROGRESS_STAGES.map((_, i) => (
+                              <div
+                                key={i}
+                                className={`flex-1 ${i <= stepIndex ? 'bg-red-600' : 'bg-gray-200'}`}
+                                style={{ minWidth: 4 }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs text-gray-600 whitespace-nowrap">
+                            {stepIndex >= 0 ? `${stepIndex + 1}/${totalSteps}` : ''} {request.status}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-600 whitespace-nowrap">
-                          {stepIndex >= 0 ? `${stepIndex + 1}/${totalSteps}` : ''} {request.status}
-                        </span>
+                      </div>
+                      <StatusBadge status={request.status} size="sm" showIcon={false} />
+                    </div>
+                  </Link>
+                  {isNegotiating && (
+                    <div className="px-4 pb-4 pt-0">
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3">
+                        {hasNotes && (
+                          <p className="text-sm text-amber-900 mb-3">
+                            <span className="font-medium text-amber-800">Admin note:</span>{' '}
+                            {request.negotiating_notes}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            if (acceptingId) return;
+                            setAcceptingId(request.id);
+                            try {
+                              await requestsAPI.agreeToProceed(request.id);
+                              await fetchStats();
+                            } catch (err: any) {
+                              setError(err?.message || 'Failed to accept');
+                            } finally {
+                              setAcceptingId(null);
+                            }
+                          }}
+                          disabled={!!acceptingId}
+                          className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 text-sm font-medium"
+                        >
+                          {acceptingId === request.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                          Accept
+                        </button>
                       </div>
                     </div>
-                    <StatusBadge status={request.status} size="sm" showIcon={false} />
-                  </div>
-                </Link>
+                  )}
+                </div>
               );
             })
           ) : (

@@ -364,6 +364,48 @@ export interface Database {
           updated_at?: string;
         };
       };
+      bid_winners: {
+        Row: {
+          id: string;
+          request_id: string | null;
+          project_title: string;
+          reference_no: string | null;
+          winner_supplier_id: string | null;
+          winner_name: string | null;
+          contract_amount: number;
+          date_awarded: string | null;
+          notes: string | null;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          request_id?: string | null;
+          project_title: string;
+          reference_no?: string | null;
+          winner_supplier_id?: string | null;
+          winner_name?: string | null;
+          contract_amount?: number;
+          date_awarded?: string | null;
+          notes?: string | null;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          request_id?: string | null;
+          project_title?: string;
+          reference_no?: string | null;
+          winner_supplier_id?: string | null;
+          winner_name?: string | null;
+          contract_amount?: number;
+          date_awarded?: string | null;
+          notes?: string | null;
+          display_order?: number;
+          updated_at?: string;
+        };
+      };
     };
     Functions: {
       get_user_role: {
@@ -384,8 +426,13 @@ export type Request = Database['public']['Tables']['requests']['Row'];
 export type RequestComment = Database['public']['Tables']['request_comments']['Row'];
 export type RequestActivity = Database['public']['Tables']['request_activity']['Row'];
 export type BudgetFundSource = Database['public']['Tables']['budget_fund_sources']['Row'];
+export type BidWinner = Database['public']['Tables']['bid_winners']['Row'];
 
 // Extended types with relations
+export type BidWinnerWithSupplier = BidWinner & {
+  winner_supplier?: Supplier | null;
+};
+
 export type RequestWithRelations = Request & {
   requester?: Profile;
   category?: Category;

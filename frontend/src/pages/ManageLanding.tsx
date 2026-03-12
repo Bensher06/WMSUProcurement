@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { landingAPI, transparencySealAPI, bidBulletinsAPI } from '../lib/supabaseApi';
+import { landingAPI, transparencySealAPI, bidBulletinsAPI, bidWinnersAPI, suppliersAPI } from '../lib/supabaseApi';
 import { supabase } from '../lib/supabaseClient';
 import type {
   LandingContent,
@@ -14,7 +14,8 @@ import type {
   LandingBac,
   LandingDocumentItem,
   BidBulletin,
-  BidBulletinAttachment
+  BidBulletinAttachment,
+  BidWinnerWithSupplier
 } from '../types/database';
 import {
   Loader2,
@@ -297,6 +298,8 @@ function TransparencyForm({
   const [mission, setMission] = useState(data.mission ?? '');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingDraft, setEditingDraft] = useState<{ mission: string; featuredItem: TransparencyFeaturedItem } | null>(null);
+  const [newRequirement, setNewRequirement] = useState('');
+  const [newRequirementEdit, setNewRequirementEdit] = useState('');
 
   const update = (field: keyof TransparencyFeaturedItem, value: string | number | string[]) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -326,6 +329,7 @@ function TransparencyForm({
       status: 'Active'
     });
     setMission('');
+    setNewRequirement('');
   };
 
   const startInlineEdit = (entry: TransparencySealEntry, idx: number) => {
@@ -356,11 +360,13 @@ function TransparencyForm({
     }
     setEditingIndex(null);
     setEditingDraft(null);
+    setNewRequirementEdit('');
   };
 
   const cancelInlineEdit = () => {
     setEditingIndex(null);
     setEditingDraft(null);
+    setNewRequirementEdit('');
   };
 
   const deleteEntry = async (idx: number) => {
@@ -449,8 +455,59 @@ function TransparencyForm({
             <textarea value={form.description || ''} onChange={(e) => update('description', e.target.value)} className={inputClass} rows={4} placeholder="Supply and delivery of various laboratory equipment..." />
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Requirements (one per line)</label>
-            <textarea value={Array.isArray(form.requirements) ? form.requirements.join('\n') : ''} onChange={(e) => update('requirements', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))} className={inputClass} rows={4} placeholder="One requirement per line: Valid business permit, DTI/SEC registration, Tax clearance..." />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Requirements</label>
+            <p className="text-xs text-gray-500 mb-2">Add each requirement as a separate item. You can list many requirements.</p>
+            <ul className="space-y-1.5 mb-3 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+              {(Array.isArray(form.requirements) ? form.requirements : []).length === 0 ? (
+                <li className="text-sm text-gray-400 py-2 px-2">No requirements yet. Add one below.</li>
+              ) : (
+                (Array.isArray(form.requirements) ? form.requirements : []).map((req, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded bg-white border border-gray-100 group">
+                    <span className="text-sm text-gray-900 flex-1 min-w-0">{req}</span>
+                    <button
+                      type="button"
+                      onClick={() => update('requirements', form.requirements.filter((_, j) => j !== i))}
+                      className="shrink-0 p-1 text-gray-400 hover:text-red-600 rounded"
+                      aria-label="Remove requirement"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newRequirement}
+                onChange={(e) => setNewRequirement(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const v = newRequirement.trim();
+                    if (v) {
+                      update('requirements', [...(Array.isArray(form.requirements) ? form.requirements : []), v]);
+                      setNewRequirement('');
+                    }
+                  }
+                }}
+                placeholder="e.g. Valid business permit"
+                className={`${inputClass} flex-1`}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const v = newRequirement.trim();
+                  if (v) {
+                    update('requirements', [...(Array.isArray(form.requirements) ? form.requirements : []), v]);
+                    setNewRequirement('');
+                  }
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium text-sm shrink-0"
+              >
+                Add
+              </button>
+            </div>
           </div>
         </div>
 
@@ -486,7 +543,25 @@ function TransparencyForm({
                     <div><label className="block text-xs font-medium text-gray-500 mb-0.5">Contact Email</label><input type="email" value={editingDraft.featuredItem.contactEmail || ''} onChange={(e) => updateDraft('contactEmail', e.target.value)} className={inputClassSm} /></div>
                     <div><label className="block text-xs font-medium text-gray-500 mb-0.5">Contact Phone (09, 11 digits)</label><input type="text" inputMode="numeric" maxLength={11} value={editingDraft.featuredItem.contactPhone || ''} onChange={(e) => { const d = e.target.value.replace(/\D/g, '').slice(0, 11); const v = !d ? '' : d.startsWith('09') ? d : d.startsWith('9') ? ('09' + d.slice(1)).slice(0, 11) : ('09' + d).slice(0, 11); updateDraft('contactPhone', v); }} className={inputClassSm} /></div>
                     <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-500 mb-0.5">Project Description</label><textarea value={editingDraft.featuredItem.description || ''} onChange={(e) => updateDraft('description', e.target.value)} className={inputClassSm} rows={3} /></div>
-                    <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-500 mb-0.5">Requirements (one per line)</label><textarea value={Array.isArray(editingDraft.featuredItem.requirements) ? editingDraft.featuredItem.requirements.join('\n') : ''} onChange={(e) => updateDraft('requirements', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))} className={inputClassSm} rows={2} /></div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-500 mb-0.5">Requirements</label>
+                      <ul className="space-y-1 mb-2 max-h-32 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-1.5 text-sm">
+                        {(Array.isArray(editingDraft.featuredItem.requirements) ? editingDraft.featuredItem.requirements : []).length === 0 ? (
+                          <li className="text-gray-400 py-1 px-2">None</li>
+                        ) : (
+                          (Array.isArray(editingDraft.featuredItem.requirements) ? editingDraft.featuredItem.requirements : []).map((req, i) => (
+                            <li key={i} className="flex items-center justify-between gap-1 py-1 px-2 rounded bg-white border border-gray-100">
+                              <span className="min-w-0 flex-1 truncate">{req}</span>
+                              <button type="button" onClick={() => updateDraft('requirements', editingDraft.featuredItem.requirements.filter((_: string, j: number) => j !== i))} className="shrink-0 p-0.5 text-gray-400 hover:text-red-600" aria-label="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                      <div className="flex gap-1">
+                        <input type="text" value={newRequirementEdit} onChange={(e) => setNewRequirementEdit(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = newRequirementEdit.trim(); if (v) { updateDraft('requirements', [...(editingDraft.featuredItem.requirements || []), v]); setNewRequirementEdit(''); } } }} placeholder="Add requirement" className={`${inputClassSm} flex-1`} />
+                        <button type="button" onClick={() => { const v = newRequirementEdit.trim(); if (v) { updateDraft('requirements', [...(editingDraft.featuredItem.requirements || []), v]); setNewRequirementEdit(''); } }} className="px-2 py-1.5 bg-gray-200 rounded text-sm shrink-0">Add</button>
+                      </div>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
                     <button type="button" onClick={saveInlineEdit} disabled={saving} className="flex items-center gap-2 px-3 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 disabled:opacity-50 text-sm font-medium">
@@ -974,11 +1049,73 @@ function PlanningCards({
   saving: boolean;
 }) {
   const appItems = data.appItems ?? [];
-  const [expandedCard, setExpandedCard] = useState<'app' | null>(null);
+  const [expandedCard, setExpandedCard] = useState<'app' | 'bidwinners' | null>(null);
   const [projectTitle, setProjectTitle] = useState('');
   const [description, setDescription] = useState('');
   const [budget, setBudget] = useState<string>('');
   const [month, setMonth] = useState<number>(0);
+
+  // Bid Winners (admin) state
+  const [bidWinners, setBidWinners] = useState<BidWinnerWithSupplier[]>([]);
+  const [bidWinnersLoading, setBidWinnersLoading] = useState(false);
+  const [bidWinnersSaving, setBidWinnersSaving] = useState(false);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [bwForm, setBwForm] = useState({
+    project_title: '',
+    reference_no: '',
+    winner_supplier_id: '',
+    winner_name: '',
+    contract_amount: '',
+    date_awarded: '',
+    notes: ''
+  });
+
+  useEffect(() => {
+    if (expandedCard === 'bidwinners') {
+      setBidWinnersLoading(true);
+      Promise.all([bidWinnersAPI.getAll(), suppliersAPI.getAll()])
+        .then(([winners, suppList]) => {
+          setBidWinners(winners);
+          setSuppliers(suppList.map((s) => ({ id: s.id, name: s.name })));
+        })
+        .catch(() => setBidWinners([]))
+        .finally(() => setBidWinnersLoading(false));
+    }
+  }, [expandedCard]);
+
+  const handleAddBidWinner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bwForm.project_title.trim()) return;
+    const amount = parseFloat(bwForm.contract_amount) || 0;
+    setBidWinnersSaving(true);
+    try {
+      await bidWinnersAPI.create({
+        project_title: bwForm.project_title.trim(),
+        reference_no: bwForm.reference_no.trim() || null,
+        winner_supplier_id: bwForm.winner_supplier_id || null,
+        winner_name: bwForm.winner_name.trim() || null,
+        contract_amount: amount,
+        date_awarded: bwForm.date_awarded.trim() || null,
+        notes: bwForm.notes.trim() || null
+      });
+      setBwForm({ project_title: '', reference_no: '', winner_supplier_id: '', winner_name: '', contract_amount: '', date_awarded: '', notes: '' });
+      const list = await bidWinnersAPI.getAll();
+      setBidWinners(list);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBidWinnersSaving(false);
+    }
+  };
+
+  const handleRemoveBidWinner = async (id: string) => {
+    try {
+      await bidWinnersAPI.delete(id);
+      setBidWinners((prev) => prev.filter((w) => w.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleAddAppItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1064,6 +1201,9 @@ function PlanningCards({
     </>
   );
 
+  const winnerDisplay = (row: BidWinnerWithSupplier) =>
+    (row.winner_supplier as { name?: string } | null)?.name ?? row.winner_name ?? '—';
+
   if (expandedCard === 'app') {
     return (
       <div className="space-y-4">
@@ -1082,6 +1222,124 @@ function PlanningCards({
     );
   }
 
+  if (expandedCard === 'bidwinners') {
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setExpandedCard(null)}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm font-medium"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Planning & Reporting
+        </button>
+        <div className="rounded-xl border-2 border-gray-200 bg-white p-6 w-full">
+          <h3 className="font-semibold text-gray-900 mb-4">Bid Winners & Awardees</h3>
+          <form onSubmit={handleAddBidWinner} className="space-y-3">
+            <input
+              type="text"
+              value={bwForm.project_title}
+              onChange={(e) => setBwForm((f) => ({ ...f, project_title: e.target.value }))}
+              placeholder="Project title"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              required
+            />
+            <input
+              type="text"
+              value={bwForm.reference_no}
+              onChange={(e) => setBwForm((f) => ({ ...f, reference_no: e.target.value }))}
+              placeholder="Reference no."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <select
+                value={bwForm.winner_supplier_id}
+                onChange={(e) => setBwForm((f) => ({ ...f, winner_supplier_id: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Winner (supplier)</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={bwForm.winner_name}
+                onChange={(e) => setBwForm((f) => ({ ...f, winner_name: e.target.value }))}
+                placeholder="Or winner name (if not in list)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={bwForm.contract_amount}
+                onChange={(e) => setBwForm((f) => ({ ...f, contract_amount: e.target.value }))}
+                placeholder="Contract amount (₱)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                required
+              />
+              <input
+                type="date"
+                value={bwForm.date_awarded}
+                onChange={(e) => setBwForm((f) => ({ ...f, date_awarded: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <input
+              type="text"
+              value={bwForm.notes}
+              onChange={(e) => setBwForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="Notes"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <button
+              type="submit"
+              disabled={bidWinnersSaving}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 disabled:opacity-50 text-sm font-medium"
+            >
+              {bidWinnersSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Add item
+            </button>
+          </form>
+          {bidWinnersLoading ? (
+            <div className="flex items-center gap-2 text-gray-500 py-6 justify-center mt-4">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Loading…</span>
+            </div>
+          ) : bidWinners.length > 0 ? (
+            <ul className="mt-4 space-y-2 border-t border-gray-200 pt-4">
+              {bidWinners.map((row) => (
+                <li key={row.id} className="flex items-start justify-between gap-2 py-2 border-b border-gray-100 last:border-0">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 text-sm">{row.project_title}</p>
+                    {(row.reference_no || row.notes) && (
+                      <p className="text-xs text-gray-600 mt-0.5">{[row.reference_no, row.notes].filter(Boolean).join(' · ')}</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">
+                      ₱{Number(row.contract_amount).toLocaleString()} · {winnerDisplay(row)}
+                      {row.date_awarded && ` · ${new Date(row.date_awarded).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveBidWinner(row.id)}
+                    className="text-[#98111E] hover:text-[#98111E] p-1 cursor-pointer"
+                    aria-label="Remove"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid sm:grid-cols-2 gap-6">
       <button
@@ -1092,15 +1350,14 @@ function PlanningCards({
         <span className="font-semibold text-gray-900">APP (Annual Procurement Plan)</span>
         <span className="text-sm text-gray-500 mt-2">Click to open</span>
       </button>
-      <a
-        href="/bid-winners-awardees"
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        onClick={() => setExpandedCard('bidwinners')}
         className="flex flex-col items-center justify-center min-h-[140px] p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-red-900 hover:shadow-md transition-all cursor-pointer text-left w-full"
       >
         <span className="font-semibold text-gray-900">Bid Winners & Awardees</span>
-        <span className="text-sm text-gray-500 mt-2">PMR — View on landing</span>
-      </a>
+        <span className="text-sm text-gray-500 mt-2">PMR — Manage winners (view on landing)</span>
+      </button>
     </div>
   );
 }
