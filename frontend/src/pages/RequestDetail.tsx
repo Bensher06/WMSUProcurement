@@ -573,7 +573,12 @@ const RequestDetail = () => {
                       </div>
                     </div>
                     <p className="text-sm text-slate-500">
-                      Total: ₱{((Math.max(1, Math.floor(Number(editForm.quantity)) || 1) * (parseFloat(editForm.unit_price) || 0)).toLocaleString()}
+                      Total: ₱
+                      {(() => {
+                        const q = Math.max(1, Math.floor(Number(editForm.quantity)) || 1);
+                        const p = parseFloat(editForm.unit_price) || 0;
+                        return (q * p).toLocaleString();
+                      })()}
                     </p>
                     <div className="flex gap-2 pt-2">
                       <button
