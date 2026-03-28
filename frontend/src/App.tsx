@@ -8,21 +8,15 @@ import Landing from './pages/Landing';
 import ActiveBidding from './pages/ActiveBidding';
 import BidBulletins from './pages/BidBulletins';
 import SupplierRegister from './pages/SupplierRegister';
-import RequestProgress from './pages/RequestProgress';
-import Dashboard from './pages/Dashboard';
-import Requests from './pages/Requests';
-import NewRequest from './pages/NewRequest';
-import RequestDetail from './pages/RequestDetail';
-import History from './pages/History';
-import Approvals from './pages/Approvals';
-import ManageLanding from './pages/ManageLanding';
 import Users from './pages/Users';
-import Vendors from './pages/Vendors';
+import Budget from './pages/Budget';
+import Logs from './pages/Logs';
+import AdminRoute from './components/AdminRoute';
+import FacultyRoute from './components/FacultyRoute';
+import FacultyHome from './pages/FacultyHome';
 import AccreditationPortal from './pages/AccreditationPortal';
 import AnnualProcurementPlan from './pages/AnnualProcurementPlan';
 import BidWinnersAwardees from './pages/BidWinnersAwardees';
-import Budget from './pages/Budget';
-import BudgetFundSources from './pages/BudgetFundSources';
 
 function App() {
   return (
@@ -41,20 +35,16 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />
           
-          {/* Protected Routes */}
+          {/* Authenticated layout: admin + faculty */}
           <Route element={<Layout />}>
-            <Route path="/request-progress" element={<RequestProgress />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/requests" element={<Requests />} />
-            <Route path="/requests/new" element={<NewRequest />} />
-            <Route path="/requests/:id" element={<RequestDetail />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/approvals" element={<Approvals />} />
-            <Route path="/manage-landing" element={<ManageLanding />} />
-            <Route path="/users" element={<Users />} />
-            <Route path="/vendors" element={<Vendors />} />
-            <Route path="/budget" element={<Budget />} />
-            <Route path="/budget/:budgetId/funds" element={<BudgetFundSources />} />
+            <Route element={<FacultyRoute />}>
+              <Route path="/faculty" element={<FacultyHome />} />
+            </Route>
+            <Route element={<AdminRoute />}>
+              <Route path="/budget" element={<Budget />} />
+              <Route path="/users" element={<Users />} />
+              <Route path="/logs" element={<Logs />} />
+            </Route>
           </Route>
 
           {/* Fallback */}

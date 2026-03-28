@@ -1,17 +1,12 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { normalizeUserRole } from '../lib/roles';
 import {
-  CircleDot,
-  LayoutDashboard,
-  FilePlus,
-  ListTodo,
-  History,
-  CheckSquare,
-  Users,
-  Building2,
-  Wallet,
   LogOut,
-  X
+  X,
+  Wallet,
+  Users,
+  ScrollText
 } from 'lucide-react';
 
 type SidebarProps = {
@@ -20,74 +15,32 @@ type SidebarProps = {
 };
 
 const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
-  const { profile, signOut } = useAuth();
+  const { profile, user, signOut, isAdmin } = useAuth();
 
-  const navItems = [
-    {
-      name: 'Request progress',
-      icon: CircleDot,
-      path: '/request-progress',
-      roles: ['Faculty', 'DeptHead']
-    },
-    {
-      name: 'Dashboard',
-      icon: LayoutDashboard,
-      path: '/dashboard',
-      roles: ['Faculty', 'DeptHead', 'Admin']
-    },
-    {
-      name: 'New Request',
-      icon: FilePlus,
-      path: '/requests/new',
-      roles: ['Faculty', 'DeptHead']
-    },
-    {
-      name: 'My Requests',
-      icon: ListTodo,
-      path: '/requests',
-      roles: ['Faculty', 'DeptHead']
-    },
-    {
-      name: 'Request History',
-      icon: History,
-      path: '/history',
-      roles: ['Faculty', 'DeptHead', 'Admin']
-    },
-    {
-      name: 'Pending Approvals',
-      icon: CheckSquare,
-      path: '/approvals',
-      roles: ['DeptHead', 'Admin']
-    },
-    {
-      name: 'Budget',
-      icon: Wallet,
-      path: '/budget',
-      roles: ['DeptHead', 'Admin']
-    },
-    {
-      name: 'Users',
-      icon: Users,
-      path: '/users',
-      roles: ['Admin']
-    },
-    {
-      name: 'Suppliers',
-      icon: Building2,
-      path: '/vendors',
-      roles: ['Admin']
-    },
-    {
-      name: 'Procurement',
-      icon: LayoutDashboard,
-      path: '/manage-landing',
-      roles: ['Admin']
-    }
+  const navItems: Array<{ name: string; icon: typeof Wallet; path: string; roles: string[] }> = [
+    { name: 'Budget', icon: Wallet, path: '/budget', roles: ['Admin'] },
+    { name: 'Users', icon: Users, path: '/users', roles: ['Admin'] },
+    { name: 'Logs', icon: ScrollText, path: '/logs', roles: ['Admin'] },
   ];
 
-  const filteredNavItems = navItems.filter(item => 
-    profile?.role && item.roles.includes(profile.role)
-  );
+  // Use same admin check as routes (profile and/or JWT), not only `profile.role` string match
+  const filteredNavItems = isAdmin() ? navItems : [];
+
+  const meta = user?.user_metadata as { full_name?: string; role?: string } | undefined;
+  const displayName =
+    profile?.full_name?.trim() ||
+    meta?.full_name?.trim() ||
+    user?.email?.split('@')[0] ||
+    'User';
+
+  // Don’t show “Loading…” forever — use profile when ready, else JWT hints + isAdmin() (same as routes)
+  const displayRole = profile
+    ? normalizeUserRole(profile.role)
+    : isAdmin()
+      ? 'Admin'
+      : meta?.role
+        ? normalizeUserRole(meta.role)
+        : 'Faculty';
 
   const handleSignOut = async () => {
     try {
@@ -130,7 +83,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
               <li key={item.path}>
                 <NavLink
                   to={item.path}
-                  end={item.path === '/request-progress' || item.path === '/requests'}
+                  end
                   onClick={() => onClose?.()}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-4 py-3 transition-all duration-200 ${
@@ -153,12 +106,12 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         <div className="flex items-center gap-3 px-3 py-3 mb-3 rounded-lg bg-red-900/50">
           <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center border-2 border-red-700 shadow-sm">
             <span className="text-xs sm:text-sm font-bold text-gray-900">
-              {profile?.full_name?.charAt(0).toUpperCase() || '?'}
+              {(displayName.charAt(0) || '?').toUpperCase()}
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-xs sm:text-sm truncate text-white">{profile?.full_name || 'User'}</p>
-            <p className="text-[10px] sm:text-xs text-red-200">{profile?.role || 'Guest'}</p>
+            <p className="font-medium text-xs sm:text-sm truncate text-white">{displayName}</p>
+            <p className="text-[10px] sm:text-xs text-red-200">{displayRole}</p>
           </div>
         </div>
         <button

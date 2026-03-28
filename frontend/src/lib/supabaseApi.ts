@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { normalizeUserRole } from './roles';
 import type { 
   Profile, 
   Category, 
@@ -19,19 +20,25 @@ import type {
   BidBulletinAttachment
 } from '../types/database';
 
+function withNormalizedRole(p: Profile | null): Profile | null {
+  if (!p) return null;
+  return { ...p, role: normalizeUserRole(p.role) };
+}
+
 // =====================================================
 // AUTH API
 // =====================================================
 export const authAPI = {
   // Sign up with email and password
   signUp: async (email: string, password: string, fullName: string, role: string = 'Faculty', department?: string | null) => {
+    const canonicalRole = normalizeUserRole(role);
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
-          role: role,
+          role: canonicalRole,
           ...(department != null && department !== '' ? { department } : {})
         }
       }
@@ -88,10 +95,10 @@ export const authAPI = {
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
-    return data;
+    return withNormalizedRole(data);
   }
 };
 
@@ -105,7 +112,7 @@ export const profilesAPI = {
       .select('*')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map((row) => ({ ...row, role: normalizeUserRole(row.role) }));
   },
 
   getById: async (id: string): Promise<Profile | null> => {
@@ -115,18 +122,22 @@ export const profilesAPI = {
       .eq('id', id)
       .single();
     if (error) throw error;
-    return data;
+    return withNormalizedRole(data);
   },
 
   update: async (id: string, updates: Partial<Profile>): Promise<Profile> => {
+    const payload = { ...updates };
+    if (payload.role !== undefined && payload.role !== null) {
+      payload.role = normalizeUserRole(payload.role);
+    }
     const { data, error } = await supabase
       .from('profiles')
-      .update(updates)
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return withNormalizedRole(data);
   },
 
   delete: async (id: string): Promise<void> => {
@@ -749,6 +760,22 @@ export const activityAPI = {
       `)
       .eq('request_id', requestId)
       .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  /** All recent request activity (admin audit log). */
+  getAllRecent: async (limit = 150): Promise<ActivityWithActor[]> => {
+    const { data, error } = await supabase
+      .from('request_activity')
+      .select(`
+        *,
+        actor:profiles!actor_id(*),
+        request:requests!request_id(id, item_name, status)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
     return data || [];

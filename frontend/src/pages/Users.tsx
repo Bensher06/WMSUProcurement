@@ -16,6 +16,7 @@ import {
   Building2
 } from 'lucide-react';
 import { CenteredAlert } from '../components/CenteredAlert';
+import { normalizeUserRole } from '../lib/roles';
 
 const DEPARTMENTS = [
   'College of Computing Science',
@@ -132,7 +133,7 @@ const Users = () => {
       full_name: user.full_name,
       email: user.email,
       password: '',
-      role: user.role,
+      role: normalizeUserRole(user.role),
       department: user.department || '',
       approved_budget: user.approved_budget != null ? String(user.approved_budget) : ''
     });
@@ -173,7 +174,8 @@ const Users = () => {
   );
 
   const getRoleBadgeColor = (role: UserRole) => {
-    switch (role) {
+    const r = normalizeUserRole(role);
+    switch (r) {
       case 'Admin': return 'bg-red-100 text-red-700';
       case 'DeptHead': return 'bg-purple-100 text-purple-700';
       default: return 'bg-blue-100 text-blue-700';
@@ -250,7 +252,7 @@ const Users = () => {
                 </td>
                 <td className="px-6 py-4">
                   <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                    {user.role}
+                    {normalizeUserRole(user.role)}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">

@@ -47,12 +47,16 @@ export const getCurrentProfile = async () => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
+  const { data: profile, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
+  if (error) {
+    console.error('[getCurrentProfile]', error.message, error.code);
+    return null;
+  }
   return profile;
 };
 

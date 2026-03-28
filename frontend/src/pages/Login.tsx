@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../lib/supabaseApi';
-import { Mail, Lock, Loader2, CheckCircle, X } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { isAdminRole, isFacultyUser } from '../lib/roles';
+import { Mail, Lock, Loader2, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { CenteredAlert } from '../components/CenteredAlert';
 
 const Login = () => {
@@ -14,11 +16,50 @@ const Login = () => {
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
-  const { signIn, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
+  const { signIn, isAuthenticated, profile, user, loading: authLoading, profileLoading } = useAuth();
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    if (authLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-white">
+          <Loader2 className="w-10 h-10 text-red-900 animate-spin" />
+        </div>
+      );
+    }
+    // After sign-in, session is ready before `profiles` loads — wait here or we Navigate to `/` too early
+    if (!profile && profileLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-white">
+          <Loader2 className="w-10 h-10 text-red-900 animate-spin" />
+        </div>
+      );
+    }
+    if (!profile) {
+      return (
+        <Navigate
+          to={
+            isAdminRole(null, user)
+              ? '/users'
+              : isFacultyUser(null, user)
+                ? '/faculty'
+                : '/'
+          }
+          replace
+        />
+      );
+    }
+    return (
+      <Navigate
+        to={
+          isAdminRole(profile, user)
+            ? '/users'
+            : isFacultyUser(profile, user)
+              ? '/faculty'
+              : '/'
+        }
+        replace
+      />
+    );
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,7 +69,9 @@ const Login = () => {
 
     try {
       await signIn(email, password);
-      navigate('/dashboard');
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) throw new Error('No session after sign in.');
+      // Session + profile load run in AuthContext; <Navigate> above runs on next render(s)
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please try again.');
     } finally {
