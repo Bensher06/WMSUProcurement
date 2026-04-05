@@ -16,37 +16,31 @@ export default function DeptHeadRequestHistory() {
   const [college, setCollege] = useState<College | null>(null);
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const colleges = await collegesAPI.getAll();
-        const handled = colleges.find((c) => c.handler_id === profile?.id) ?? null;
-        setCollege(handled);
-        if (!handled?.name) {
-          const mine = await requestsAPI.getMyRequests();
-          if (!mounted) return;
-          setRows(mine);
-          return;
-        }
-        const deptProfiles = await profilesQueryAPI.getByDepartment(handled.name);
-        const requesterIds = deptProfiles.map((p) => p.id);
-        const data = await requestsAPI.getByRequesterIds(requesterIds);
-        if (!mounted) return;
-        setRows(data);
-      } catch (e: any) {
-        if (!mounted) return;
-        setError(e?.message || 'Failed to load requests.');
-      } finally {
-        if (mounted) setLoading(false);
+  const loadRows = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const colleges = await collegesAPI.getAll();
+      const handled = colleges.find((c) => c.handler_id === profile?.id) ?? null;
+      setCollege(handled);
+      if (!handled?.name) {
+        const mine = await requestsAPI.getMyRequests();
+        setRows(mine);
+        return;
       }
-    };
-    void load();
-    return () => {
-      mounted = false;
-    };
+      const deptProfiles = await profilesQueryAPI.getByDepartment(handled.name);
+      const requesterIds = deptProfiles.map((p) => p.id);
+      const data = await requestsAPI.getByRequesterIds(requesterIds);
+      setRows(data);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load requests.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRows();
   }, [profile?.id]);
 
   const subtitle = useMemo(() => {
@@ -122,7 +116,13 @@ export default function DeptHeadRequestHistory() {
         </div>
       )}
 
-      <RequisitionViewModal request={viewing} onClose={() => setViewing(null)} />
+      <RequisitionViewModal
+        request={viewing}
+        onClose={() => setViewing(null)}
+        onRecorded={() => {
+          void loadRows();
+        }}
+      />
     </div>
   );
 }

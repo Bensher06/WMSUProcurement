@@ -1,5 +1,5 @@
 import type { RequestWithRelations } from '../types/database';
-import type { ParsedRequisition } from '../lib/parseRequisitionDescription';
+import type { ParsedRequisition, ParsedRequisitionItem, ParsedSignatory } from '../lib/parseRequisitionDescription';
 import { HEADER_FIELD_ORDER } from '../lib/parseRequisitionDescription';
 
 const money = (n: number) => `₱${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -7,6 +7,19 @@ const money = (n: number) => `₱${Number(n || 0).toLocaleString(undefined, { mi
 type Props = {
   request: RequestWithRelations;
   parsed: ParsedRequisition;
+  /** College admin adjust mode: inline editors for line items. */
+  editableLineItems?: {
+    items: ParsedRequisitionItem[];
+    onChange: (items: ParsedRequisitionItem[]) => void;
+  } | null;
+  /** Department (faculty) view: Approved by / Issued by are read-only; college admin completes these. */
+  lockCollegeSignatories?: boolean;
+  /** College admin: edit Approved by / Issued by (saved with approval or Save as approved). */
+  collegeSignatoriesEdit?: {
+    approvedBy: ParsedSignatory;
+    issuedBy: ParsedSignatory;
+    onChange: (next: { approvedBy: ParsedSignatory; issuedBy: ParsedSignatory }) => void;
+  } | null;
 };
 
 function RawBlock({ text }: { text: string }) {
@@ -48,7 +61,75 @@ function SignatoryCard({
   );
 }
 
-export default function RequisitionDocumentView({ request, parsed }: Props) {
+function sigInputDisplay(v: string) {
+  const t = v.trim();
+  if (t === '—' || t === '-') return '';
+  return v;
+}
+
+function SignatoryInputCard({
+  title,
+  value,
+  disabled,
+  onChange,
+  disabledHint,
+}: {
+  title: string;
+  value: ParsedSignatory;
+  disabled: boolean;
+  onChange?: (next: ParsedSignatory) => void;
+  disabledHint?: string;
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-4 ${
+        disabled ? 'border-gray-200 bg-gray-100/90' : 'border-gray-200 bg-gray-50/80'
+      }`}
+    >
+      <p className="text-xs font-bold text-red-900 uppercase tracking-wide border-b border-red-200/60 pb-2 mb-3">
+        {title}
+      </p>
+      <div className="mt-1 space-y-2">
+        <input
+          disabled={disabled}
+          value={sigInputDisplay(value.name)}
+          onChange={(e) => onChange?.({ ...value, name: e.target.value })}
+          placeholder="Name"
+          title={disabled ? disabledHint : undefined}
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed"
+        />
+        <input
+          disabled={disabled}
+          value={sigInputDisplay(value.designation)}
+          onChange={(e) => onChange?.({ ...value, designation: e.target.value })}
+          placeholder="Designation"
+          title={disabled ? disabledHint : undefined}
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed"
+        />
+        <input
+          type={disabled ? 'text' : 'date'}
+          disabled={disabled}
+          value={disabled ? (sigInputDisplay(value.date) || '—') : sigInputDisplay(value.date)}
+          onChange={(e) => onChange?.({ ...value, date: e.target.value })}
+          placeholder="mm/dd/yyyy"
+          title={disabled ? disabledHint : undefined}
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed"
+        />
+      </div>
+      {disabled && disabledHint ? (
+        <p className="mt-2 text-[11px] text-gray-500 leading-snug">{disabledHint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export default function RequisitionDocumentView({
+  request,
+  parsed,
+  editableLineItems,
+  lockCollegeSignatories = false,
+  collegeSignatoriesEdit = null,
+}: Props) {
   const req = request.requester;
   const collegeName = req?.department ?? null;
   const deptUnit = req?.faculty_department?.trim() || null;
@@ -63,9 +144,19 @@ export default function RequisitionDocumentView({ request, parsed }: Props) {
   }
 
   const { header, items, signatories } = parsed;
-  const lineTotal = (it: (typeof items)[0]) => it.qty * it.unitPrice;
-  const grandTotal = items.reduce((s, it) => s + lineTotal(it), 0);
-  const totalQty = items.reduce((s, it) => s + it.qty, 0);
+  const displayItems = editableLineItems?.items ?? items;
+  const lineTotal = (it: ParsedRequisitionItem) => it.qty * it.unitPrice;
+  const grandTotal = displayItems.reduce((s, it) => s + lineTotal(it), 0);
+  const totalQty = displayItems.reduce((s, it) => s + it.qty, 0);
+
+  const patchLine = (index: number, patch: Partial<ParsedRequisitionItem>) => {
+    if (!editableLineItems) return;
+    const next = displayItems.map((it, i) => {
+      if (i !== index) return { ...it, lineNo: i + 1 };
+      return { ...it, ...patch, lineNo: i + 1 };
+    });
+    editableLineItems.onChange(next);
+  };
 
   return (
     <div className="space-y-6">
@@ -89,8 +180,13 @@ export default function RequisitionDocumentView({ request, parsed }: Props) {
 
       <section>
         <h3 className="text-sm font-bold text-red-950 uppercase tracking-wide border-b-2 border-red-900/20 pb-2 mb-4">
-          Line items
+          Line items{editableLineItems ? ' (editing)' : ''}
         </h3>
+        {editableLineItems ? (
+          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+            Edit quantities, prices, or descriptions below, then use <strong>Save as approved</strong> in the footer.
+          </p>
+        ) : null}
         <div className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
           <table className="min-w-full text-sm">
             <thead>
@@ -105,21 +201,71 @@ export default function RequisitionDocumentView({ request, parsed }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {items.length === 0 ? (
+              {displayItems.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-500">
                     No line items could be read from this record. See raw details below if shown.
                   </td>
                 </tr>
               ) : null}
-              {items.map((it) => (
-                <tr key={it.lineNo} className="hover:bg-gray-50/80">
-                  <td className="px-3 py-3 text-gray-600 font-mono text-xs">{it.lineNo}</td>
-                  <td className="px-3 py-3 text-gray-900">{it.stockNo || '—'}</td>
-                  <td className="px-3 py-3 text-gray-900">{it.unit || '—'}</td>
-                  <td className="px-3 py-3 text-gray-900">{it.item}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{it.qty}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{money(it.unitPrice)}</td>
+              {displayItems.map((it, rowIdx) => (
+                <tr key={`${it.lineNo}-${rowIdx}`} className="hover:bg-gray-50/80">
+                  <td className="px-3 py-3 text-gray-600 font-mono text-xs">{rowIdx + 1}</td>
+                  {editableLineItems ? (
+                    <>
+                      <td className="px-2 py-2">
+                        <input
+                          value={it.stockNo}
+                          onChange={(e) => patchLine(rowIdx, { stockNo: e.target.value })}
+                          className="w-full min-w-[4rem] px-2 py-1.5 rounded border border-gray-300 text-sm"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          value={it.unit}
+                          onChange={(e) => patchLine(rowIdx, { unit: e.target.value })}
+                          className="w-full min-w-[3rem] px-2 py-1.5 rounded border border-gray-300 text-sm"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          value={it.item}
+                          onChange={(e) => patchLine(rowIdx, { item: e.target.value })}
+                          className="w-full min-w-[8rem] px-2 py-1.5 rounded border border-gray-300 text-sm"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={it.qty}
+                          onChange={(e) => patchLine(rowIdx, { qty: Math.max(0, Number(e.target.value) || 0) })}
+                          className="w-full min-w-[4rem] px-2 py-1.5 rounded border border-gray-300 text-sm text-right tabular-nums"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={it.unitPrice}
+                          onChange={(e) =>
+                            patchLine(rowIdx, { unitPrice: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className="w-full min-w-[5rem] px-2 py-1.5 rounded border border-gray-300 text-sm text-right tabular-nums"
+                        />
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-3 py-3 text-gray-900">{it.stockNo || '—'}</td>
+                      <td className="px-3 py-3 text-gray-900">{it.unit || '—'}</td>
+                      <td className="px-3 py-3 text-gray-900">{it.item}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{it.qty}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{money(it.unitPrice)}</td>
+                    </>
+                  )}
                   <td className="px-3 py-3 text-right font-medium tabular-nums text-gray-900">
                     {money(lineTotal(it))}
                   </td>
@@ -149,8 +295,52 @@ export default function RequisitionDocumentView({ request, parsed }: Props) {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <SignatoryCard title="Requested by" s={signatories.requestedBy} />
-          <SignatoryCard title="Approved by" s={signatories.approvedBy} />
-          <SignatoryCard title="Issued by" s={signatories.issuedBy} />
+          {collegeSignatoriesEdit ? (
+            <>
+              <SignatoryInputCard
+                title="Approved by"
+                value={collegeSignatoriesEdit.approvedBy}
+                disabled={false}
+                onChange={(approvedBy) =>
+                  collegeSignatoriesEdit.onChange({
+                    approvedBy,
+                    issuedBy: collegeSignatoriesEdit.issuedBy,
+                  })
+                }
+              />
+              <SignatoryInputCard
+                title="Issued by"
+                value={collegeSignatoriesEdit.issuedBy}
+                disabled={false}
+                onChange={(issuedBy) =>
+                  collegeSignatoriesEdit.onChange({
+                    approvedBy: collegeSignatoriesEdit.approvedBy,
+                    issuedBy,
+                  })
+                }
+              />
+            </>
+          ) : lockCollegeSignatories ? (
+            <>
+              <SignatoryInputCard
+                title="Approved by"
+                value={signatories.approvedBy}
+                disabled
+                disabledHint="Completed by your college admin when the request is processed."
+              />
+              <SignatoryInputCard
+                title="Issued by"
+                value={signatories.issuedBy}
+                disabled
+                disabledHint="Completed by your college admin when the request is processed."
+              />
+            </>
+          ) : (
+            <>
+              <SignatoryCard title="Approved by" s={signatories.approvedBy} />
+              <SignatoryCard title="Issued by" s={signatories.issuedBy} />
+            </>
+          )}
           <SignatoryCard title="Received by" s={signatories.receivedBy} />
         </div>
       </section>
@@ -207,6 +397,20 @@ function DocumentMeta({
               <span className="text-gray-500">Department:</span>{' '}
               <span className="font-semibold text-gray-900">{deptUnit}</span>
             </p>
+          ) : null}
+        </div>
+      )}
+      {(request.quantity_received != null || request.partial_delivery_remarks) && (
+        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50/90 p-3 text-sm text-blue-950">
+          <p className="font-semibold text-blue-950 mb-1">Delivery / variance</p>
+          {request.quantity_received != null && (
+            <p>
+              Quantity received: <span className="font-medium">{request.quantity_received}</span> (ordered:{' '}
+              {request.quantity})
+            </p>
+          )}
+          {request.partial_delivery_remarks ? (
+            <p className="mt-1 whitespace-pre-wrap">Remarks: {request.partial_delivery_remarks}</p>
           ) : null}
         </div>
       )}

@@ -78,7 +78,8 @@ function parseSignatoryLine(line: string): { role: string; s: ParsedSignatory } 
   };
 }
 
-const emptySig = (): ParsedSignatory => ({ name: '—', designation: '—', date: '—' });
+/** Default signatory for structured forms (parser fills missing slots). */
+export const emptyParsedSignatory = (): ParsedSignatory => ({ name: '—', designation: '—', date: '—' });
 
 export function parseRequisitionDescription(description: string | null | undefined): ParsedRequisition {
   const text = (description ?? '').trim();
@@ -112,10 +113,10 @@ export function parseRequisitionDescription(description: string | null | undefin
   }
 
   const sigs = {
-    requestedBy: emptySig(),
-    approvedBy: emptySig(),
-    issuedBy: emptySig(),
-    receivedBy: emptySig(),
+    requestedBy: emptyParsedSignatory(),
+    approvedBy: emptyParsedSignatory(),
+    issuedBy: emptyParsedSignatory(),
+    receivedBy: emptyParsedSignatory(),
   };
 
   for (let i = sigIdx + 1; i < lines.length; i++) {
@@ -148,3 +149,52 @@ export const HEADER_FIELD_ORDER = [
   { key: 'SAI No', label: 'SAI No.' },
   { key: 'Purpose', label: 'Purpose' },
 ] as const;
+
+/** Header keys written first when serializing (matches FacultyNewRequest order). */
+const SERIALIZE_HEADER_FIRST = [
+  'Funding source',
+  'Unit allotment / sub-category',
+  'Division',
+  'Office/Section',
+  'RIS No',
+  'SAI No',
+  'Purpose',
+] as const;
+
+/**
+ * Rebuild `requests.description` from structured parse (inverse of parseRequisitionDescription).
+ */
+export function serializeStructuredRequisition(data: ParsedRequisitionStructured): string {
+  const lines: string[] = [];
+  const used = new Set<string>();
+  for (const key of SERIALIZE_HEADER_FIRST) {
+    const val = data.header[key];
+    if (val != null && String(val).trim() !== '') {
+      lines.push(`${key}: ${val}`);
+      used.add(key);
+    }
+  }
+  for (const [k, v] of Object.entries(data.header)) {
+    if (used.has(k)) continue;
+    if (v != null && String(v).trim() !== '') {
+      lines.push(`${k}: ${v}`);
+    }
+  }
+  lines.push('');
+  lines.push('Requisition Items:');
+  data.items.forEach((it, i) => {
+    const n = i + 1;
+    lines.push(
+      `${n}. Stock No: ${it.stockNo || '-'} | Unit: ${it.unit || '-'} | Item: ${it.item} | Qty: ${it.qty} | Unit Price: ${Number(it.unitPrice || 0)}`
+    );
+  });
+  lines.push('');
+  lines.push('Signatories:');
+  const sig = (role: string, s: ParsedSignatory) =>
+    `${role}: ${s.name || '-'} | Designation: ${s.designation || '-'} | Date: ${s.date || '-'}`;
+  lines.push(sig('Requested by', data.signatories.requestedBy));
+  lines.push(sig('Approved by', data.signatories.approvedBy));
+  lines.push(sig('Issued by', data.signatories.issuedBy));
+  lines.push(sig('Received by', data.signatories.receivedBy));
+  return lines.join('\n');
+}

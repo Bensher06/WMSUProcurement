@@ -269,6 +269,10 @@ export interface Database {
           delivery_notes: string | null;
           delivery_attachment_url: string | null;
           negotiating_notes: string | null;
+          budget_fund_source_id: string | null;
+          college_budget_type_id: string | null;
+          quantity_received: number | null;
+          partial_delivery_remarks: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -297,6 +301,10 @@ export interface Database {
           delivery_notes?: string | null;
           delivery_attachment_url?: string | null;
           negotiating_notes?: string | null;
+          budget_fund_source_id?: string | null;
+          college_budget_type_id?: string | null;
+          quantity_received?: number | null;
+          partial_delivery_remarks?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -323,6 +331,10 @@ export interface Database {
           delivery_notes?: string | null;
           delivery_attachment_url?: string | null;
           negotiating_notes?: string | null;
+          budget_fund_source_id?: string | null;
+          college_budget_type_id?: string | null;
+          quantity_received?: number | null;
+          partial_delivery_remarks?: string | null;
           updated_at?: string;
         };
       };

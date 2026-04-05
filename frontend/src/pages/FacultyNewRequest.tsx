@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { requestsAPI } from '../lib/supabaseApi';
+import { procurementBudgetAPI, requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { CenteredAlert } from '../components/CenteredAlert';
 import { Loader2, PlusCircle, Send, Trash2 } from 'lucide-react';
@@ -32,19 +32,16 @@ export default function FacultyNewRequest() {
   const [requestedByDesignation, setRequestedByDesignation] = useState('');
   const [requestedByDate, setRequestedByDate] = useState('');
 
-  const [approvedByName, setApprovedByName] = useState('');
-  const [approvedByDesignation, setApprovedByDesignation] = useState('');
-  const [approvedByDate, setApprovedByDate] = useState('');
-
-  const [issuedByName, setIssuedByName] = useState('');
-  const [issuedByDesignation, setIssuedByDesignation] = useState('');
-  const [issuedByDate, setIssuedByDate] = useState('');
-
   const [receivedByName, setReceivedByName] = useState('');
   const [receivedByDesignation, setReceivedByDesignation] = useState('');
   const [receivedByDate, setReceivedByDate] = useState('');
 
   const [lines, setLines] = useState<RequisitionLine[]>([newLine()]);
+  const [budgetSnap, setBudgetSnap] = useState<Awaited<
+    ReturnType<typeof procurementBudgetAPI.getFacultySnapshot>
+  > | null>(null);
+  const [fundSourceId, setFundSourceId] = useState('');
+  const [budgetTypeId, setBudgetTypeId] = useState('');
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [rows, setRows] = useState<RequestWithRelations[]>([]);
@@ -55,6 +52,10 @@ export default function FacultyNewRequest() {
     const data = await requestsAPI.getMyRequests();
     setRows(data);
   };
+
+  useEffect(() => {
+    void procurementBudgetAPI.getFacultySnapshot().then(setBudgetSnap);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -107,19 +108,13 @@ export default function FacultyNewRequest() {
     setRequestedByDesignation('');
     setRequestedByDate('');
 
-    setApprovedByName('');
-    setApprovedByDesignation('');
-    setApprovedByDate('');
-
-    setIssuedByName('');
-    setIssuedByDesignation('');
-    setIssuedByDate('');
-
     setReceivedByName('');
     setReceivedByDesignation('');
     setReceivedByDate('');
 
     setLines([newLine()]);
+    setFundSourceId('');
+    setBudgetTypeId('');
   };
 
   const addLine = () => setLines((prev) => [...prev, newLine()]);
@@ -127,18 +122,54 @@ export default function FacultyNewRequest() {
   const updateLine = (idx: number, key: keyof RequisitionLine, value: string) =>
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, [key]: value } : l)));
 
+  const validateBudgetLink = (grandTotal: number): string | null => {
+    const snap = budgetSnap;
+    if (!snap) return null;
+    if (snap.fundSources.length > 0 && !fundSourceId.trim()) {
+      return 'Select a funding source for this purchase request.';
+    }
+    if (snap.college && snap.collegeAdminBudget > 0 && grandTotal > snap.remainingCollege + 0.005) {
+      return `Estimated total (${money(grandTotal)}) exceeds available college budget (${money(snap.remainingCollege)}).`;
+    }
+    if (budgetTypeId.trim()) {
+      const t = snap.budgetTypes.find((x) => x.id === budgetTypeId);
+      if (t) {
+        const used = snap.committedByTypeId[t.id] ?? 0;
+        const rem = Math.max(0, Number(t.amount) - used);
+        if (grandTotal > rem + 0.005) {
+          return `Estimated total exceeds remaining allotment for “${t.name}” (${money(rem)} available).`;
+        }
+      }
+    }
+    return null;
+  };
+
   const buildRequisitionCreatePayload = (): { error: string } | {
     item_name: string;
     description: string;
     quantity: number;
     unit_price: number;
+    budget_fund_source_id: string | null;
+    college_budget_type_id: string | null;
   } => {
     const validLines = computedRows.filter((l) => l.itemDescription.trim() && l.qty > 0);
     if (validLines.length === 0) {
       return { error: 'Add at least one line item with item description and quantity.' };
     }
 
+    const vBudget = validateBudgetLink(grandTotal);
+    if (vBudget) return { error: vBudget };
+
+    const fund = budgetSnap?.fundSources.find((f) => f.id === fundSourceId);
+    const fundLabel = fund
+      ? [fund.source, fund.funds_for].filter(Boolean).join(' · ') || 'Fund line'
+      : '';
+    const type = budgetSnap?.budgetTypes.find((t) => t.id === budgetTypeId);
+    const typeLabel = type?.name || '';
+
     const descriptionText = [
+      fundLabel ? `Funding source: ${fundLabel}` : null,
+      typeLabel ? `Unit allotment / sub-category: ${typeLabel}` : null,
       `Division: ${division || '-'}`,
       `Office/Section: ${officeSection || '-'}`,
       `RIS No: ${risNo || '-'}`,
@@ -153,10 +184,12 @@ export default function FacultyNewRequest() {
       '',
       'Signatories:',
       `Requested by: ${requestedByName || '-'} | Designation: ${requestedByDesignation || '-'} | Date: ${requestedByDate || '-'}`,
-      `Approved by: ${approvedByName || '-'} | Designation: ${approvedByDesignation || '-'} | Date: ${approvedByDate || '-'}`,
-      `Issued by: ${issuedByName || '-'} | Designation: ${issuedByDesignation || '-'} | Date: ${issuedByDate || '-'}`,
+      `Approved by: - | Designation: - | Date: -`,
+      `Issued by: - | Designation: - | Date: -`,
       `Received by: ${receivedByName || '-'} | Designation: ${receivedByDesignation || '-'} | Date: ${receivedByDate || '-'}`,
-    ].join('\n');
+    ]
+      .filter((line): line is string => line != null)
+      .join('\n');
 
     const avgUnitPrice = totalQty > 0 ? grandTotal / totalQty : 0;
     const requestTitle = `RIS ${risNo || 'N/A'} - ${officeSection || division || 'Requisition'}`;
@@ -166,6 +199,8 @@ export default function FacultyNewRequest() {
       description: descriptionText,
       quantity: Math.max(1, Math.round(totalQty)),
       unit_price: Number(avgUnitPrice.toFixed(2)),
+      budget_fund_source_id: fundSourceId.trim() || null,
+      college_budget_type_id: budgetTypeId.trim() || null,
     };
   };
 
@@ -295,6 +330,80 @@ export default function FacultyNewRequest() {
             </div>
           </div>
 
+          {budgetSnap && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50/90 p-4 space-y-4">
+              <h3 className="text-sm font-semibold text-gray-900">Budget link</h3>
+              <p className="text-xs text-gray-600">
+                Tie this PR to the university funding stream and (optionally) a college sub-category. Totals are checked
+                against available budget before save.
+              </p>
+              {budgetSnap.college ? (
+                <div className="text-sm text-gray-700 space-y-1">
+                  <p>
+                    <span className="text-gray-500">College:</span>{' '}
+                    <span className="font-semibold text-gray-900">{budgetSnap.college.name}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Pool (College Admin allocation):</span>{' '}
+                    <span className="font-semibold">{money(budgetSnap.collegeAdminBudget)}</span>
+                    {' · '}
+                    <span className="text-gray-500">Committed:</span> {money(budgetSnap.committedCollege)}
+                    {' · '}
+                    <span className="text-gray-500">Available:</span>{' '}
+                    <span className="font-semibold text-red-900">{money(budgetSnap.remainingCollege)}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Set your profile <strong>Department</strong> to your college name (under Users) so budget checks apply.
+                </p>
+              )}
+              {budgetSnap.fundSources.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">
+                    Funding source <span className="text-red-700">*</span>
+                  </label>
+                  <select
+                    value={fundSourceId}
+                    onChange={(e) => setFundSourceId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600 bg-white"
+                    required
+                  >
+                    <option value="">Select funding source…</option>
+                    {budgetSnap.fundSources.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {(f.source || f.funds_for || 'Fund').trim()} — {money(f.amount)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {budgetSnap.budgetTypes.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">
+                    Unit allotment / sub-category
+                  </label>
+                  <select
+                    value={budgetTypeId}
+                    onChange={(e) => setBudgetTypeId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600 bg-white"
+                  >
+                    <option value="">General college pool (no sub-category)</option>
+                    {budgetSnap.budgetTypes.map((t) => {
+                      const used = budgetSnap.committedByTypeId[t.id] ?? 0;
+                      const rem = Math.max(0, Number(t.amount) - used);
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.fund_code || '—'}) — {money(rem)} left of {money(t.amount)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="overflow-x-auto border border-gray-200 rounded-lg">
             <table className="min-w-full">
               <thead className="bg-gray-50">
@@ -406,50 +515,62 @@ export default function FacultyNewRequest() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 p-4">
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
                 <p className="text-sm font-semibold text-gray-900">Approved by</p>
-                <div className="mt-3 space-y-2">
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Filled in by your college admin when the request is approved.
+                </p>
+                <div className="mt-1 space-y-2">
                   <input
-                    value={approvedByName}
-                    onChange={(e) => setApprovedByName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
                     placeholder="Name"
                   />
                   <input
-                    value={approvedByDesignation}
-                    onChange={(e) => setApprovedByDesignation(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
                     placeholder="Designation"
                   />
                   <input
-                    type="date"
-                    value={approvedByDate}
-                    onChange={(e) => setApprovedByDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Date"
                   />
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 p-4">
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
                 <p className="text-sm font-semibold text-gray-900">Issued by</p>
-                <div className="mt-3 space-y-2">
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Filled in by your college admin when the request is approved.
+                </p>
+                <div className="mt-1 space-y-2">
                   <input
-                    value={issuedByName}
-                    onChange={(e) => setIssuedByName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
                     placeholder="Name"
                   />
                   <input
-                    value={issuedByDesignation}
-                    onChange={(e) => setIssuedByDesignation(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
                     placeholder="Designation"
                   />
                   <input
-                    type="date"
-                    value={issuedByDate}
-                    onChange={(e) => setIssuedByDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Date"
                   />
                 </div>
               </div>

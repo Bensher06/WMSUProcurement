@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabaseClient';
 import { requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { Eye, Loader2 } from 'lucide-react';
@@ -7,32 +9,78 @@ import RequisitionViewModal from '../components/RequisitionViewModal';
 const amount = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
 
 export default function FacultyRequestHistory() {
+  const { user } = useAuth();
   const [rows, setRows] = useState<RequestWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadRows = useCallback(async () => {
+    if (!user?.id) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const data = await requestsAPI.getMyRequests();
+      setRows(data);
+      setViewing((v) => (v ? data.find((r) => r.id === v.id) ?? v : null));
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const data = await requestsAPI.getMyRequests();
-        if (!mounted) return;
-        setRows(data);
-      } catch (e: any) {
-        if (!mounted) return;
-        setError(e?.message || 'Failed to load requests.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
+    void loadRows();
+  }, [loadRows]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = window.setTimeout(() => {
+        void loadRows();
+      }, 150);
     };
-    void load();
+    document.addEventListener('visibilitychange', onVis);
     return () => {
-      mounted = false;
+      document.removeEventListener('visibilitychange', onVis);
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
     };
-  }, []);
+  }, [loadRows]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const uid = user.id;
+    const channel = supabase
+      .channel(`faculty-my-requests-${uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'requests',
+          filter: `requester_id=eq.${uid}`,
+        },
+        () => {
+          if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+          refreshTimer.current = window.setTimeout(() => {
+            void loadRows();
+          }, 350);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, loadRows]);
 
   return (
     <div className="space-y-6">
@@ -95,7 +143,11 @@ export default function FacultyRequestHistory() {
         </div>
       )}
 
-      <RequisitionViewModal request={viewing} onClose={() => setViewing(null)} />
+      <RequisitionViewModal
+        request={viewing}
+        onClose={() => setViewing(null)}
+        onRecorded={() => void loadRows()}
+      />
     </div>
   );
 }

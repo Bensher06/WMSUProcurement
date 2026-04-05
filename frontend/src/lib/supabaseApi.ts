@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient';
 import { normalizeUserRole } from './roles';
-import type { 
-  Profile, 
+import type {
+  Profile,
   College,
   CollegeBudgetType,
   Category, 
@@ -791,6 +791,8 @@ export const requestsAPI = {
     quantity: number;
     unit_price: number;
     status?: RequestStatus;
+    budget_fund_source_id?: string | null;
+    college_budget_type_id?: string | null;
   }): Promise<Request> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
@@ -801,13 +803,34 @@ export const requestsAPI = {
       .insert({
         ...request,
         requester_id: user.id,
-        status: request.status || 'Draft'
+        status: request.status || 'Draft',
       })
       .select()
       .single();
 
     if (error) throw error;
     return data;
+  },
+
+  /** Record physical delivery: quantity received vs ordered; remarks mandatory if partial. Sets status to Received. */
+  recordPartialDelivery: async (
+    id: string,
+    payload: { quantity_received: number; partial_delivery_remarks?: string | null }
+  ): Promise<Request> => {
+    const existing = await requestsAPI.getById(id);
+    if (!existing) throw new Error('Request not found');
+    const qo = Math.max(0, Number(existing.quantity || 0));
+    const qr = Math.max(0, Number(payload.quantity_received));
+    const remarks = payload.partial_delivery_remarks?.trim() || null;
+    if (qr < qo && !remarks) {
+      throw new Error('Remarks are required when quantity received is less than quantity ordered.');
+    }
+    return requestsAPI.update(id, {
+      quantity_received: qr,
+      partial_delivery_remarks: qr < qo ? remarks : null,
+      status: 'Received',
+      received_at: new Date().toISOString(),
+    });
   },
 
   update: async (id: string, updates: Partial<Request>): Promise<Request> => {
@@ -842,6 +865,29 @@ export const requestsAPI = {
       status: 'Approved',
       approved_by: user?.id,
       approved_at: new Date().toISOString()
+    });
+  },
+
+  /** Sum total_price already charged to this budget type (approved pipeline only). Pending requests do not count. */
+  sumCommittedTotalForBudgetType: async (collegeBudgetTypeId: string): Promise<number> => {
+    const committedStatuses: RequestStatus[] = ['Approved', 'Ordered', 'Received', 'Completed'];
+    const { data, error } = await supabase
+      .from('requests')
+      .select('total_price')
+      .eq('college_budget_type_id', collegeBudgetTypeId)
+      .in('status', committedStatuses);
+    if (error) throw error;
+    return (data || []).reduce((s, r) => s + Number(r.total_price || 0), 0);
+  },
+
+  /** Approve and assign college sub-category (budget type). Use null for general college pool. */
+  approveWithBudgetType: async (id: string, college_budget_type_id: string | null): Promise<Request> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    return requestsAPI.update(id, {
+      status: 'Approved',
+      approved_by: user?.id ?? null,
+      approved_at: new Date().toISOString(),
+      college_budget_type_id,
     });
   },
 
@@ -920,6 +966,89 @@ export const requestsAPI = {
       delegated_at: new Date().toISOString()
     });
   }
+};
+
+/** University → college → unit (sub-category) context for faculty PR validation (doc-aligned). */
+export const procurementBudgetAPI = {
+  getFacultySnapshot: async (): Promise<{
+    college: College | null;
+    collegeAdminBudget: number;
+    committedCollege: number;
+    remainingCollege: number;
+    fundSources: BudgetFundSource[];
+    budgetTypes: CollegeBudgetType[];
+    committedByTypeId: Record<string, number>;
+  }> => {
+    const profile = await authAPI.getProfile();
+    if (!profile) {
+      return {
+        college: null,
+        collegeAdminBudget: 0,
+        committedCollege: 0,
+        remainingCollege: 0,
+        fundSources: [],
+        budgetTypes: [],
+        committedByTypeId: {},
+      };
+    }
+    const colleges = await collegesAPI.getAll();
+    const deptName = profile.department?.trim() || profile.faculty_department?.trim() || '';
+    const college = deptName ? colleges.find((c) => c.name === deptName) ?? null : null;
+
+    const fundSources: BudgetFundSource[] = [];
+    const yearBudgets = await budgetsAPI.getCurrentYearBudgets();
+    for (const b of yearBudgets) {
+      const fs = await budgetFundSourcesAPI.getByBudgetId(b.id);
+      fundSources.push(...fs);
+    }
+
+    if (!college) {
+      return {
+        college: null,
+        collegeAdminBudget: 0,
+        committedCollege: 0,
+        remainingCollege: 0,
+        fundSources,
+        budgetTypes: [],
+        committedByTypeId: {},
+      };
+    }
+
+    const budgetTypes = (await collegeBudgetTypesAPI.getByCollegeId(college.id)).filter((t) => t.is_active);
+    const deptProfiles = await profilesQueryAPI.getByDepartment(college.name);
+    const ids = deptProfiles.map((p) => p.id);
+    const rows = ids.length ? await requestsAPI.getByRequesterIds(ids) : [];
+    const committedStatuses: RequestStatus[] = ['Approved', 'Ordered', 'Received', 'Completed'];
+    const committedCollege = rows
+      .filter((r) => committedStatuses.includes(r.status))
+      .reduce((s, r) => s + Number(r.total_price || 0), 0);
+
+    const handler = college.handler_id ? await profilesAPI.getById(college.handler_id) : null;
+    const collegeAdminBudget = Number(handler?.approved_budget || 0);
+    const remainingCollege = Math.max(0, collegeAdminBudget - committedCollege);
+
+    const committedByTypeId: Record<string, number> = {};
+    for (const t of budgetTypes) {
+      committedByTypeId[t.id] = 0;
+    }
+    for (const r of rows) {
+      if (!committedStatuses.includes(r.status)) continue;
+      const tid = r.college_budget_type_id;
+      if (tid && committedByTypeId[tid] !== undefined) {
+        committedByTypeId[tid] += Number(r.total_price || 0);
+      }
+    }
+
+    return {
+      college,
+      collegeAdminBudget,
+      committedCollege,
+      remainingCollege,
+      fundSources,
+      budgetTypes,
+      committedByTypeId,
+    };
+  },
 };
 
 // =====================================================
