@@ -1,0 +1,673 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { procurementBudgetAPI, requestsAPI } from '../lib/supabaseApi';
+import type { RequestWithRelations } from '../types/database';
+import { CenteredAlert } from '../components/CenteredAlert';
+import { Loader2, PlusCircle, Send, Trash2 } from 'lucide-react';
+
+const money = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
+type RequisitionLine = {
+  stockNo: string;
+  unit: string;
+  itemDescription: string;
+  quantity: string;
+  unitPrice: string;
+};
+
+const newLine = (): RequisitionLine => ({
+  stockNo: '',
+  unit: '',
+  itemDescription: '',
+  quantity: '',
+  unitPrice: '',
+});
+
+export default function FacultyNewRequest() {
+  const [division, setDivision] = useState('');
+  const [officeSection, setOfficeSection] = useState('');
+  const [risNo, setRisNo] = useState('');
+  const [saiNo, setSaiNo] = useState('');
+  const [purpose, setPurpose] = useState('');
+
+  const [requestedByName, setRequestedByName] = useState('');
+  const [requestedByDesignation, setRequestedByDesignation] = useState('');
+  const [requestedByDate, setRequestedByDate] = useState('');
+
+  const [receivedByName, setReceivedByName] = useState('');
+  const [receivedByDesignation, setReceivedByDesignation] = useState('');
+  const [receivedByDate, setReceivedByDate] = useState('');
+
+  const [lines, setLines] = useState<RequisitionLine[]>([newLine()]);
+  const [budgetSnap, setBudgetSnap] = useState<Awaited<
+    ReturnType<typeof procurementBudgetAPI.getFacultySnapshot>
+  > | null>(null);
+  const [fundSourceId, setFundSourceId] = useState('');
+  const [budgetTypeId, setBudgetTypeId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [rows, setRows] = useState<RequestWithRelations[]>([]);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const loadMine = async () => {
+    const data = await requestsAPI.getMyRequests();
+    setRows(data);
+  };
+
+  useEffect(() => {
+    void procurementBudgetAPI.getFacultySnapshot().then(setBudgetSnap);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setPageLoading(true);
+      try {
+        const data = await requestsAPI.getMyRequests();
+        if (!mounted) return;
+        setRows(data);
+      } catch (e: any) {
+        if (!mounted) return;
+        setRows([]);
+        setError(e?.message || 'Failed to load requests.');
+      } finally {
+        if (mounted) setPageLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const draftRows = useMemo(() => rows.filter((r) => r.status === 'Draft'), [rows]);
+
+  const computedRows = useMemo(() => {
+    return lines.map((l) => {
+      const qty = Math.max(0, Number(l.quantity || 0));
+      const unit = Math.max(0, Number(l.unitPrice || 0));
+      return {
+        ...l,
+        qty,
+        unit,
+        rowTotal: qty * unit,
+      };
+    });
+  }, [lines]);
+
+  const totalQty = useMemo(() => computedRows.reduce((s, r) => s + r.qty, 0), [computedRows]);
+  const grandTotal = useMemo(() => computedRows.reduce((s, r) => s + r.rowTotal, 0), [computedRows]);
+
+  const resetForm = () => {
+    setDivision('');
+    setOfficeSection('');
+    setRisNo('');
+    setSaiNo('');
+    setPurpose('');
+
+    setRequestedByName('');
+    setRequestedByDesignation('');
+    setRequestedByDate('');
+
+    setReceivedByName('');
+    setReceivedByDesignation('');
+    setReceivedByDate('');
+
+    setLines([newLine()]);
+    setFundSourceId('');
+    setBudgetTypeId('');
+  };
+
+  const addLine = () => setLines((prev) => [...prev, newLine()]);
+  const removeLine = (idx: number) => setLines((prev) => prev.filter((_, i) => i !== idx));
+  const updateLine = (idx: number, key: keyof RequisitionLine, value: string) =>
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, [key]: value } : l)));
+
+  const validateBudgetLink = (grandTotal: number): string | null => {
+    const snap = budgetSnap;
+    if (!snap) return null;
+    if (snap.fundSources.length > 0 && !fundSourceId.trim()) {
+      return 'Select a funding source for this purchase request.';
+    }
+    if (snap.college && snap.collegeAdminBudget > 0 && grandTotal > snap.remainingCollege + 0.005) {
+      return `Estimated total (${money(grandTotal)}) exceeds available college budget (${money(snap.remainingCollege)}).`;
+    }
+    if (budgetTypeId.trim()) {
+      const t = snap.budgetTypes.find((x) => x.id === budgetTypeId);
+      if (t) {
+        const used = snap.committedByTypeId[t.id] ?? 0;
+        const rem = Math.max(0, Number(t.amount) - used);
+        if (grandTotal > rem + 0.005) {
+          return `Estimated total exceeds remaining allotment for “${t.name}” (${money(rem)} available).`;
+        }
+      }
+    }
+    return null;
+  };
+
+  const buildRequisitionCreatePayload = (): { error: string } | {
+    item_name: string;
+    description: string;
+    quantity: number;
+    unit_price: number;
+    budget_fund_source_id: string | null;
+    college_budget_type_id: string | null;
+  } => {
+    const validLines = computedRows.filter((l) => l.itemDescription.trim() && l.qty > 0);
+    if (validLines.length === 0) {
+      return { error: 'Add at least one line item with item description and quantity.' };
+    }
+
+    const vBudget = validateBudgetLink(grandTotal);
+    if (vBudget) return { error: vBudget };
+
+    const fund = budgetSnap?.fundSources.find((f) => f.id === fundSourceId);
+    const fundLabel = fund
+      ? [fund.source, fund.funds_for].filter(Boolean).join(' · ') || 'Fund line'
+      : '';
+    const type = budgetSnap?.budgetTypes.find((t) => t.id === budgetTypeId);
+    const typeLabel = type?.name || '';
+
+    const descriptionText = [
+      fundLabel ? `Funding source: ${fundLabel}` : null,
+      typeLabel ? `Unit allotment / sub-category: ${typeLabel}` : null,
+      `Division: ${division || '-'}`,
+      `Office/Section: ${officeSection || '-'}`,
+      `RIS No: ${risNo || '-'}`,
+      `SAI No: ${saiNo || '-'}`,
+      `Purpose: ${purpose || '-'}`,
+      '',
+      'Requisition Items:',
+      ...validLines.map(
+        (l, i) =>
+          `${i + 1}. Stock No: ${l.stockNo || '-'} | Unit: ${l.unit || '-'} | Item: ${l.itemDescription} | Qty: ${l.qty} | Unit Price: ${Number(l.unitPrice || 0)}`
+      ),
+      '',
+      'Signatories:',
+      `Requested by: ${requestedByName || '-'} | Designation: ${requestedByDesignation || '-'} | Date: ${requestedByDate || '-'}`,
+      `Approved by: - | Designation: - | Date: -`,
+      `Issued by: - | Designation: - | Date: -`,
+      `Received by: ${receivedByName || '-'} | Designation: ${receivedByDesignation || '-'} | Date: ${receivedByDate || '-'}`,
+    ]
+      .filter((line): line is string => line != null)
+      .join('\n');
+
+    const avgUnitPrice = totalQty > 0 ? grandTotal / totalQty : 0;
+    const requestTitle = `RIS ${risNo || 'N/A'} - ${officeSection || division || 'Requisition'}`;
+
+    return {
+      item_name: requestTitle.slice(0, 120),
+      description: descriptionText,
+      quantity: Math.max(1, Math.round(totalQty)),
+      unit_price: Number(avgUnitPrice.toFixed(2)),
+      budget_fund_source_id: fundSourceId.trim() || null,
+      college_budget_type_id: budgetTypeId.trim() || null,
+    };
+  };
+
+  const onCreateDraft = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    const payload = buildRequisitionCreatePayload();
+    if ('error' in payload) {
+      setError(payload.error);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await requestsAPI.create({
+        ...payload,
+        status: 'Draft',
+      });
+      resetForm();
+      await loadMine();
+      setSuccess('Draft request created.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create request.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onSendRequest = async () => {
+    setError('');
+    setSuccess('');
+
+    const payload = buildRequisitionCreatePayload();
+    if ('error' in payload) {
+      setError(payload.error);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const created = await requestsAPI.create({
+        ...payload,
+        status: 'Draft',
+      });
+      await requestsAPI.submit(created.id);
+      resetForm();
+      await loadMine();
+      setSuccess('Request sent to your assigned college (Pending). College Admin can review it in Request & History.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send request.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onSubmitDraft = async (id: string) => {
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      await requestsAPI.submit(id);
+      await loadMine();
+      setSuccess('Request submitted for approval.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to submit request.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <CenteredAlert error={error || undefined} success={success || undefined} onClose={() => { setError(''); setSuccess(''); }} />
+
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">New Request</h1>
+        <p className="text-base text-gray-500 mt-1">
+          Fill out the requisition, complete signatories, then save a <strong>draft</strong> or <strong>Send Request</strong> to route it to your assigned college (Pending).
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <form onSubmit={onCreateDraft} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Division</label>
+              <input
+                value={division}
+                onChange={(e) => setDivision(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
+                placeholder="e.g., OPD"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Office / Section</label>
+              <input
+                value={officeSection}
+                onChange={(e) => setOfficeSection(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">RIS No.</label>
+              <input
+                value={risNo}
+                onChange={(e) => setRisNo(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">SAI No.</label>
+              <input
+                value={saiNo}
+                onChange={(e) => setSaiNo(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-800 mb-1">Purpose</label>
+              <input
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
+              />
+            </div>
+          </div>
+
+          {budgetSnap && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50/90 p-4 space-y-4">
+              <h3 className="text-sm font-semibold text-gray-900">Budget link</h3>
+              <p className="text-xs text-gray-600">
+                Tie this PR to the university funding stream and (optionally) a college sub-category. Totals are checked
+                against available budget before save.
+              </p>
+              {budgetSnap.college ? (
+                <div className="text-sm text-gray-700 space-y-1">
+                  <p>
+                    <span className="text-gray-500">College:</span>{' '}
+                    <span className="font-semibold text-gray-900">{budgetSnap.college.name}</span>
+                  </p>
+                  <p>
+                    <span className="text-gray-500">Pool (College Admin allocation):</span>{' '}
+                    <span className="font-semibold">{money(budgetSnap.collegeAdminBudget)}</span>
+                    {' · '}
+                    <span className="text-gray-500">Committed:</span> {money(budgetSnap.committedCollege)}
+                    {' · '}
+                    <span className="text-gray-500">Available:</span>{' '}
+                    <span className="font-semibold text-red-900">{money(budgetSnap.remainingCollege)}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Set your profile <strong>Department</strong> to your college name (under Users) so budget checks apply.
+                </p>
+              )}
+              {budgetSnap.fundSources.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">
+                    Funding source <span className="text-red-700">*</span>
+                  </label>
+                  <select
+                    value={fundSourceId}
+                    onChange={(e) => setFundSourceId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600 bg-white"
+                    required
+                  >
+                    <option value="">Select funding source…</option>
+                    {budgetSnap.fundSources.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {(f.source || f.funds_for || 'Fund').trim()} — {money(f.amount)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {budgetSnap.budgetTypes.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-800 mb-1">
+                    Unit allotment / sub-category
+                  </label>
+                  <select
+                    value={budgetTypeId}
+                    onChange={(e) => setBudgetTypeId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600 bg-white"
+                  >
+                    <option value="">General college pool (no sub-category)</option>
+                    {budgetSnap.budgetTypes.map((t) => {
+                      const used = budgetSnap.committedByTypeId[t.id] ?? 0;
+                      const rem = Math.max(0, Number(t.amount) - used);
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.fund_code || '—'}) — {money(rem)} left of {money(t.amount)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Stock No</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Unit</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Item / Description</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Req Qty</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Est Unit Price</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line, idx) => (
+                  <tr key={idx} className="border-t border-gray-100">
+                    <td className="px-2 py-2">
+                      <input
+                        value={line.stockNo}
+                        onChange={(e) => updateLine(idx, 'stockNo', e.target.value)}
+                        className="w-24 px-2 py-1.5 rounded border border-gray-300"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        value={line.unit}
+                        onChange={(e) => updateLine(idx, 'unit', e.target.value)}
+                        className="w-20 px-2 py-1.5 rounded border border-gray-300"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        value={line.itemDescription}
+                        onChange={(e) => updateLine(idx, 'itemDescription', e.target.value)}
+                        className="w-64 px-2 py-1.5 rounded border border-gray-300"
+                        placeholder="Item description"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={line.quantity}
+                        onChange={(e) => updateLine(idx, 'quantity', e.target.value)}
+                        className="w-20 px-2 py-1.5 rounded border border-gray-300"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={line.unitPrice}
+                        onChange={(e) => updateLine(idx, 'unitPrice', e.target.value)}
+                        className="w-28 px-2 py-1.5 rounded border border-gray-300"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => removeLine(idx)}
+                        disabled={lines.length === 1}
+                        className="p-1.5 rounded text-red-700 hover:bg-red-50 disabled:opacity-40"
+                        aria-label="Remove line"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={addLine}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              <PlusCircle className="w-4 h-4" />
+              Add line
+            </button>
+          </div>
+
+          <div className="border-t border-gray-100 pt-5">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Signatories</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900">Requested by</p>
+                <div className="mt-3 space-y-2">
+                  <input
+                    value={requestedByName}
+                    onChange={(e) => setRequestedByName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    placeholder="Name"
+                  />
+                  <input
+                    value={requestedByDesignation}
+                    onChange={(e) => setRequestedByDesignation(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    placeholder="Designation"
+                  />
+                  <input
+                    type="date"
+                    value={requestedByDate}
+                    onChange={(e) => setRequestedByDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
+                <p className="text-sm font-semibold text-gray-900">Approved by</p>
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Filled in by your college admin when the request is approved.
+                </p>
+                <div className="mt-1 space-y-2">
+                  <input
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Name"
+                  />
+                  <input
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Designation"
+                  />
+                  <input
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Date"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4">
+                <p className="text-sm font-semibold text-gray-900">Issued by</p>
+                <p className="text-xs text-gray-500 mt-1 mb-3">
+                  Filled in by your college admin when the request is approved.
+                </p>
+                <div className="mt-1 space-y-2">
+                  <input
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Name"
+                  />
+                  <input
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Designation"
+                  />
+                  <input
+                    disabled
+                    value=""
+                    readOnly
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed"
+                    placeholder="Date"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900">Received by</p>
+                <div className="mt-3 space-y-2">
+                  <input
+                    value={receivedByName}
+                    onChange={(e) => setReceivedByName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    placeholder="Name"
+                  />
+                  <input
+                    value={receivedByDesignation}
+                    onChange={(e) => setReceivedByDesignation(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                    placeholder="Designation"
+                  />
+                  <input
+                    type="date"
+                    value={receivedByDate}
+                    onChange={(e) => setReceivedByDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 pt-6 mt-6 border-t border-gray-200">
+            <p className="text-xs text-gray-500">
+              <strong>Send Request</strong> submits to your assigned college (Pending). <strong>Create draft</strong> saves without submitting; use Submit in the list below later.
+            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="text-sm text-gray-600">
+                Requested Qty: <span className="font-semibold text-gray-900">{totalQty}</span> | Estimated total:{' '}
+                <span className="font-semibold text-gray-900">{money(grandTotal)}</span>
+              </div>
+              <div className="flex flex-wrap gap-3 justify-end">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-900 text-red-900 bg-white hover:bg-red-50 disabled:opacity-50 min-w-[200px]"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle className="w-4 h-4" />}
+                  Create requisition draft
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void onSendRequest()}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-900 text-white hover:bg-red-800 disabled:opacity-50 min-w-[200px]"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Send Request
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900">Your Draft Requests</h2>
+        <p className="text-sm text-gray-500 mt-1">Submit drafts to notify College Admin / WMSU Admin workflows.</p>
+
+        {pageLoading ? (
+          <div className="min-h-[20vh] flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-red-900 animate-spin" />
+          </div>
+        ) : draftRows.length === 0 ? (
+          <div className="text-sm text-gray-500 mt-4">No drafts yet.</div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {draftRows.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{r.item_name}</p>
+                  <p className="text-sm text-gray-500">
+                    {r.quantity} × {money(r.unit_price)} = <span className="font-medium text-gray-700">{money(r.total_price)}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void onSubmitDraft(r.id)}
+                  className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                >
+                  Submit
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
