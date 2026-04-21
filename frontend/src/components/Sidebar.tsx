@@ -1,6 +1,10 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { formatRoleLabel, normalizeUserRole } from '../lib/roles';
+import { useEffect, useState } from 'react';
+import { commentsAPI, integrityAPI, requestsAPI } from '../lib/supabaseApi';
+import { getRequestChatReadAt } from '../lib/chatUnread';
+import { requestAllowsChat } from '../lib/chatPolicy';
 import {
   LogOut,
   X,
@@ -21,6 +25,7 @@ type SidebarProps = {
 
 const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
   const { profile, user, signOut, isAdmin } = useAuth();
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   const navItems: Array<{ name: string; icon: typeof Wallet; path: string; roles: string[] }> = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/admin/dashboard', roles: ['Admin'] },
@@ -59,6 +64,50 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         : 'Faculty';
 
   const filteredNavItems = navItems.filter((item) => item.roles.includes(displayRole));
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadUnread = async () => {
+      if (!profile?.id) {
+        if (!cancelled) setUnreadChatCount(0);
+        return;
+      }
+      try {
+        const requests =
+          displayRole === 'Faculty'
+            ? await requestsAPI.getMyRequests()
+            : displayRole === 'DeptHead'
+              ? (await requestsAPI.getForHandledCollege(profile.id)).requests
+              : [];
+        if (!requests.length) {
+          if (!cancelled) setUnreadChatCount(0);
+          return;
+        }
+        const ids = requests.map((r) => r.id);
+        const latest = await commentsAPI.getLatestByRequestIds(ids);
+        const adminEdited = ids.length ? await integrityAPI.getRequestIdsWithAdminEdit(ids) : new Set<string>();
+        const unread = requests.reduce((count, r) => {
+          const latestAt = latest[r.id];
+          if (!latestAt) return count;
+          if (!requestAllowsChat(r.status, adminEdited.has(r.id))) return count;
+          const readAt = getRequestChatReadAt(profile.id, r.id);
+          return !readAt || new Date(latestAt).getTime() > new Date(readAt).getTime() ? count + 1 : count;
+        }, 0);
+        if (!cancelled) setUnreadChatCount(unread);
+      } catch {
+        if (!cancelled) setUnreadChatCount(0);
+      }
+    };
+    void loadUnread();
+    const onChatRead = () => void loadUnread();
+    window.addEventListener('wmsu-chat-read-updated', onChatRead);
+    const interval = window.setInterval(() => void loadUnread(), 45_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('wmsu-chat-read-updated', onChatRead);
+      window.clearInterval(interval);
+    };
+  }, [displayRole, profile?.id]);
 
   const handleSignOut = async () => {
     try {
@@ -113,6 +162,11 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                 >
                   <item.icon className="w-5 h-5 flex-shrink-0" />
                   <span className="font-medium text-sm md:text-base">{item.name}</span>
+                  {(item.name === 'Request & History' && unreadChatCount > 0) ? (
+                    <span className="ml-auto inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-white text-red-900 text-[11px] font-bold px-1.5">
+                      {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                    </span>
+                  ) : null}
                 </NavLink>
               </li>
             ))}

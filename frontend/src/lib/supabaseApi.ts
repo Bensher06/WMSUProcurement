@@ -1514,6 +1514,18 @@ export const integrityAPI = {
     return data || [];
   },
 
+  /** Request IDs that have at least one admin_edit integrity event (batch). */
+  getRequestIdsWithAdminEdit: async (requestIds: string[]): Promise<Set<string>> => {
+    if (!requestIds.length) return new Set();
+    const { data, error } = await supabase
+      .from('request_integrity_events')
+      .select('request_id')
+      .in('request_id', requestIds)
+      .eq('event_type', 'admin_edit');
+    if (error) throw error;
+    return new Set((data || []).map((row) => row.request_id as string));
+  },
+
   recordEvent: async (payload: {
     requestId: string;
     eventType: IntegrityEventType;
@@ -1695,8 +1707,37 @@ export const commentsAPI = {
       .single();
 
     if (error) throw error;
+    // Keep request activity log aligned with live conversation events.
+    await activityAPI.create(requestId, {
+      action: 'comment_added',
+      details: { comment_id: data.id },
+    });
     return data;
-  }
+  },
+
+  getLatestByRequestIds: async (requestIds: string[]): Promise<Record<string, string>> => {
+    if (!requestIds.length) return {};
+    const { data, error } = await supabase
+      .from('request_comments')
+      .select('request_id, created_at')
+      .in('request_id', requestIds)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    const out: Record<string, string> = {};
+    for (const row of data || []) {
+      if (!out[row.request_id]) out[row.request_id] = row.created_at;
+    }
+    return out;
+  },
+
+  uploadAttachment: async (requestId: string, file: File): Promise<string> => {
+    const ext = file.name.split('.').pop() || 'bin';
+    const path = `request-comments/${requestId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { data, error } = await supabase.storage.from('procurement-documents').upload(path, file, { upsert: false });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from('procurement-documents').getPublicUrl(data.path);
+    return urlData.publicUrl;
+  },
 };
 
 // =====================================================

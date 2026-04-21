@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, MessageSquareWarning, Printer, X, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { IntegrityEventWithActor, Request, RequestWithRelations } from '../types/database';
+import type { CommentWithAuthor, IntegrityEventWithActor, Request, RequestWithRelations } from '../types/database';
 import {
   parseRequisitionDescription,
   serializeStructuredRequisition,
@@ -11,7 +11,9 @@ import {
 } from '../lib/parseRequisitionDescription';
 import RequisitionDocumentView from './RequisitionDocumentView';
 import { useAuth } from '../context/AuthContext';
-import { collegeBudgetTypesAPI, collegesAPI, integrityAPI, requestsAPI } from '../lib/supabaseApi';
+import { collegeBudgetTypesAPI, collegesAPI, commentsAPI, integrityAPI, requestsAPI } from '../lib/supabaseApi';
+import { supabase } from '../lib/supabaseClient';
+import { requestAllowsChat } from '../lib/chatPolicy';
 
 type Props = {
   request: RequestWithRelations | null;
@@ -54,6 +56,12 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
   const [procurementFailedReason, setProcurementFailedReason] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [comments, setComments] = useState<CommentWithAuthor[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentError, setCommentError] = useState('');
+  const [commentSending, setCommentSending] = useState(false);
+  const [commentFile, setCommentFile] = useState<File | null>(null);
 
   const parsed = useMemo(
     () => (request ? parseRequisitionDescription(request.description) : null),
@@ -180,6 +188,48 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
   }, [request?.id]);
 
   useEffect(() => {
+    if (!request?.id) {
+      setComments([]);
+      setCommentsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadComments = async () => {
+      setCommentsLoading(true);
+      try {
+        const rows = await commentsAPI.getByRequestId(request.id);
+        if (!cancelled) setComments(rows);
+      } catch {
+        if (!cancelled) setComments([]);
+      } finally {
+        if (!cancelled) setCommentsLoading(false);
+      }
+    };
+    void loadComments();
+
+    const channel = supabase
+      .channel(`request-comments-${request.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'request_comments',
+          filter: `request_id=eq.${request.id}`,
+        },
+        () => {
+          void loadComments();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [request?.id]);
+
+  useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -223,6 +273,13 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     () => integrityRows.some((row) => row.event_type === 'admin_edit'),
     [integrityRows]
   );
+  const chatAllowed = useMemo(() => {
+    if (!request) return false;
+    return requestAllowsChat(
+      request.status,
+      integrityRows.some((row) => row.event_type === 'admin_edit')
+    );
+  }, [request?.status, request?.id, integrityRows]);
 
   const confirmApprove = async () => {
     if (!request) return;
@@ -525,6 +582,40 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     }
   };
 
+  const onSendComment = async () => {
+    if (!request) return;
+    if (!chatAllowed) {
+      setCommentError('Chat is currently limited to rejected, adjusted, or procurement-failed requests.');
+      return;
+    }
+    const content = newComment.trim();
+    if (!content && !commentFile) {
+      setCommentError('Type your message or attach a file first.');
+      return;
+    }
+    setCommentError('');
+    setCommentSending(true);
+    try {
+      let attachmentUrl = '';
+      if (commentFile) {
+        attachmentUrl = await commentsAPI.uploadAttachment(request.id, commentFile);
+      }
+      const finalContent = [
+        content || null,
+        attachmentUrl ? `Attachment: ${attachmentUrl}` : null,
+      ]
+        .filter((x): x is string => !!x)
+        .join('\n');
+      await commentsAPI.create(request.id, finalContent);
+      setNewComment('');
+      setCommentFile(null);
+    } catch (e: any) {
+      setCommentError(e?.message || 'Could not send message.');
+    } finally {
+      setCommentSending(false);
+    }
+  };
+
   if (!request) return null;
 
   const editableLineItems =
@@ -649,6 +740,94 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
               )}
             </section>
           )}
+
+          <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1">Request conversation</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Use this live chat for follow-up on adjustments, failed procurement reasons, and clarifications.
+            </p>
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+              {commentsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading conversation…
+                </div>
+              ) : comments.length === 0 ? (
+                <p className="text-sm text-gray-500">No messages yet.</p>
+              ) : (
+                comments.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
+                    <p className="font-medium text-gray-900">
+                      {c.author?.full_name || c.author?.email || 'User'}
+                    </p>
+                    <p className="text-gray-800 whitespace-pre-wrap">
+                      {c.content.split('\n').map((line, idx) =>
+                        /^Attachment:\s+https?:\/\//i.test(line) ? (
+                          <span key={`${c.id}-${idx}`} className="block">
+                            Attachment:{' '}
+                            <a
+                              href={line.replace(/^Attachment:\s+/i, '').trim()}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-700 hover:underline"
+                            >
+                              Open file
+                            </a>
+                          </span>
+                        ) : (
+                          <span key={`${c.id}-${idx}`} className="block">
+                            {line}
+                          </span>
+                        )
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">{new Date(c.created_at).toLocaleString()}</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-3 space-y-2">
+              {!chatAllowed ? (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Chat is enabled only for Rejected, Adjusted, or ProcurementFailed cases in restricted mode.
+                </p>
+              ) : null}
+              <textarea
+                value={newComment}
+                onChange={(e) => {
+                  setNewComment(e.target.value);
+                  setCommentError('');
+                }}
+                rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+                placeholder="Write a message to college/department..."
+                disabled={!chatAllowed || commentSending}
+              />
+              <input
+                type="file"
+                onChange={(e) => setCommentFile(e.target.files?.[0] || null)}
+                className="block w-full text-xs text-gray-600"
+                disabled={!chatAllowed || commentSending}
+              />
+              {commentFile ? (
+                <p className="text-xs text-gray-600">Selected file: {commentFile.name}</p>
+              ) : null}
+              {commentError ? (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{commentError}</p>
+              ) : null}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={commentSending || !chatAllowed}
+                  onClick={() => void onSendComment()}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {commentSending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Send message
+                </button>
+              </div>
+            </div>
+          </section>
 
           {showDeliveryForm && (
             <div className="print-hide mt-8 rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">

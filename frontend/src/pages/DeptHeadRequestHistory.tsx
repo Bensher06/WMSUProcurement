@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { collegeBudgetTypesAPI, requestsAPI } from '../lib/supabaseApi';
+import { collegeBudgetTypesAPI, commentsAPI, requestsAPI } from '../lib/supabaseApi';
 import { supabase } from '../lib/supabaseClient';
 import type { College, RequestWithRelations } from '../types/database';
 import { Eye, Loader2 } from 'lucide-react';
 import RequisitionViewModal from '../components/RequisitionViewModal';
 import { Link, useSearchParams } from 'react-router-dom';
+import { getRequestChatReadAt, markRequestChatReadNow } from '../lib/chatUnread';
 
 const amount = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
 
@@ -19,9 +20,11 @@ export default function DeptHeadRequestHistory() {
   const [college, setCollege] = useState<College | null>(null);
   const [typeRemainingById, setTypeRemainingById] = useState<Record<string, number>>({});
   const [collegeRemaining, setCollegeRemaining] = useState<number | null>(null);
+  const [unreadByRequestId, setUnreadByRequestId] = useState<Record<string, number>>({});
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
   const [search, setSearch] = useState('');
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledRequestIdFromUrl = useRef<string | null>(null);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -55,10 +58,23 @@ export default function DeptHeadRequestHistory() {
         nextRemaining[t.id] = Math.max(0, Number(t.amount || 0) - used);
       }
       setTypeRemainingById(nextRemaining);
+      const latestComments = await commentsAPI.getLatestByRequestIds(requests.map((r) => r.id));
+      const nextUnread: Record<string, number> = {};
+      for (const r of requests) {
+        const latestAt = latestComments[r.id];
+        if (!latestAt) {
+          nextUnread[r.id] = 0;
+          continue;
+        }
+        const readAt = getRequestChatReadAt(profile.id, r.id);
+        nextUnread[r.id] = !readAt || new Date(latestAt).getTime() > new Date(readAt).getTime() ? 1 : 0;
+      }
+      setUnreadByRequestId(nextUnread);
     } catch (e: any) {
       setError(e?.message || 'Failed to load requests.');
       setTypeRemainingById({});
       setCollegeRemaining(null);
+      setUnreadByRequestId({});
     } finally {
       setLoading(false);
     }
@@ -161,6 +177,22 @@ export default function DeptHeadRequestHistory() {
     if (!college?.name) return 'Track requests and status updates.';
     return `Requisitions from your college (${college.name}). Open a row to read the full submitted form.`;
   }, [college?.name, activeStatusTab]);
+
+  const requestIdParam = searchParams.get('requestId');
+  useEffect(() => {
+    if (!requestIdParam) {
+      handledRequestIdFromUrl.current = null;
+      return;
+    }
+    if (loading || rows.length === 0 || !profile?.id) return;
+    if (handledRequestIdFromUrl.current === requestIdParam) return;
+    const found = rows.find((r) => r.id === requestIdParam);
+    if (!found) return;
+    handledRequestIdFromUrl.current = requestIdParam;
+    markRequestChatReadNow(profile.id, found.id);
+    setUnreadByRequestId((prev) => ({ ...prev, [found.id]: 0 }));
+    setViewing(found);
+  }, [requestIdParam, loading, rows, profile?.id]);
 
   return (
     <div className="space-y-6">
@@ -328,11 +360,20 @@ export default function DeptHeadRequestHistory() {
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
-                        onClick={() => setViewing(r)}
+                        onClick={() => {
+                          if (profile?.id) {
+                            markRequestChatReadNow(profile.id, r.id);
+                            setUnreadByRequestId((prev) => ({ ...prev, [r.id]: 0 }));
+                          }
+                          setViewing(r);
+                        }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-50 transition-colors"
                       >
                         <Eye className="w-4 h-4" />
                         View form
+                        {unreadByRequestId[r.id] ? (
+                          <span className="inline-flex w-2 h-2 rounded-full bg-red-600" title="Unread chat" />
+                        ) : null}
                       </button>
                     </td>
                   </tr>

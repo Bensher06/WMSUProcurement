@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Sidebar from './Sidebar';
+import HeaderNotifications from './HeaderNotifications';
 import { CircleHelp, Loader2, Menu } from 'lucide-react';
 
 const Layout = () => {
@@ -48,6 +49,7 @@ const Layout = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 md:gap-6 text-xs sm:text-sm flex-shrink-0 flex-wrap justify-end">
+          <HeaderNotifications />
           {helpHref && (
             <Link
               to={helpHref}

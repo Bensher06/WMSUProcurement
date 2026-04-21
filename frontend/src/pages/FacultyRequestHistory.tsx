@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { requestsAPI } from '../lib/supabaseApi';
+import { commentsAPI, requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { Eye, Loader2 } from 'lucide-react';
 import RequisitionViewModal from '../components/RequisitionViewModal';
 import RequestFormChooserModal from '../components/RequestFormChooserModal';
 import InventoryCustodianSlipModal from '../components/InventoryCustodianSlipModal';
+import { getRequestChatReadAt, markRequestChatReadNow } from '../lib/chatUnread';
 
 const amount = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
 
 export default function FacultyRequestHistory() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [rows, setRows] = useState<RequestWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
   const [choosingFormFor, setChoosingFormFor] = useState<RequestWithRelations | null>(null);
   const [viewingInventory, setViewingInventory] = useState<RequestWithRelations | null>(null);
+  const [unreadByRequestId, setUnreadByRequestId] = useState<Record<string, number>>({});
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledRequestIdFromUrl = useRef<string | null>(null);
 
   const loadRows = useCallback(async () => {
     if (!user?.id) {
@@ -33,6 +37,18 @@ export default function FacultyRequestHistory() {
       const data = await requestsAPI.getMyRequests();
       setRows(data);
       setViewing((v) => (v ? data.find((r) => r.id === v.id) ?? v : null));
+      const latestComments = await commentsAPI.getLatestByRequestIds(data.map((r) => r.id));
+      const nextUnread: Record<string, number> = {};
+      for (const r of data) {
+        const latestAt = latestComments[r.id];
+        if (!latestAt) {
+          nextUnread[r.id] = 0;
+          continue;
+        }
+        const readAt = getRequestChatReadAt(user.id, r.id);
+        nextUnread[r.id] = !readAt || new Date(latestAt).getTime() > new Date(readAt).getTime() ? 1 : 0;
+      }
+      setUnreadByRequestId(nextUnread);
     } catch (e: any) {
       setError(e?.message || 'Failed to load requests.');
     } finally {
@@ -86,6 +102,22 @@ export default function FacultyRequestHistory() {
       void supabase.removeChannel(channel);
     };
   }, [user?.id, loadRows]);
+
+  const requestIdParam = searchParams.get('requestId');
+  useEffect(() => {
+    if (!requestIdParam) {
+      handledRequestIdFromUrl.current = null;
+      return;
+    }
+    if (loading || rows.length === 0 || !user?.id) return;
+    if (handledRequestIdFromUrl.current === requestIdParam) return;
+    const found = rows.find((r) => r.id === requestIdParam);
+    if (!found) return;
+    handledRequestIdFromUrl.current = requestIdParam;
+    markRequestChatReadNow(user.id, found.id);
+    setUnreadByRequestId((prev) => ({ ...prev, [found.id]: 0 }));
+    setViewing(found);
+  }, [requestIdParam, loading, rows, user?.id]);
 
   return (
     <div className="space-y-6">
@@ -166,11 +198,18 @@ export default function FacultyRequestHistory() {
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
-                        onClick={() => setChoosingFormFor(r)}
+                        onClick={() => {
+                          markRequestChatReadNow(user.id, r.id);
+                          setUnreadByRequestId((prev) => ({ ...prev, [r.id]: 0 }));
+                          setChoosingFormFor(r);
+                        }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-50 transition-colors"
                       >
                         <Eye className="w-4 h-4" />
                         View form
+                        {unreadByRequestId[r.id] ? (
+                          <span className="inline-flex w-2 h-2 rounded-full bg-red-600" title="Unread chat" />
+                        ) : null}
                       </button>
                     </td>
                   </tr>
