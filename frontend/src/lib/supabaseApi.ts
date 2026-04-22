@@ -29,9 +29,32 @@ import type {
 import { parseRequisitionDescription } from './parseRequisitionDescription';
 
 function withNormalizedRole(p: Profile | null): Profile | null {
-  if (!p) return null;
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
   return { ...p, role: normalizeUserRole(p.role) };
 }
+
+function normalizeProfileRows(rows: (Profile | null)[] | null | undefined): Profile[] {
+  return (rows || [])
+    .filter(
+      (row): row is Profile =>
+        !!row && typeof row === 'object' && !Array.isArray(row)
+    )
+    .map((row) => ({ ...row, role: normalizeUserRole((row as { role?: string | null }).role) }));
+}
+
+const isSingleRowCoerceError = (error: { message?: string; code?: string } | null | undefined): boolean => {
+  const msg = String(error?.message || '').toLowerCase();
+  return error?.code === 'PGRST116' || msg.includes('cannot coerce the result to a single json object');
+};
+
+const isPolicyOrPermissionError = (error: { message?: string; code?: string } | null | undefined): boolean => {
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    msg.includes('row-level security') ||
+    msg.includes('permission denied') ||
+    msg.includes('not allowed')
+  );
+};
 
 // =====================================================
 // AUTH API
@@ -133,7 +156,7 @@ export const profilesAPI = {
       .select('*')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data || []).map((row) => ({ ...row, role: normalizeUserRole(row.role) }));
+    return normalizeProfileRows(data as (Profile | null)[] | null);
   },
 
   getById: async (id: string): Promise<Profile | null> => {
@@ -141,7 +164,7 @@ export const profilesAPI = {
       .from('profiles')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
     if (error) throw error;
     return withNormalizedRole(data);
   },
@@ -305,7 +328,7 @@ export const registrationAPI = {
       .eq('department', collegeName)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data || []).map((row) => ({ ...row, role: normalizeUserRole(row.role) }));
+    return normalizeProfileRows(data as (Profile | null)[] | null);
   },
 
   approve: async (profileId: string): Promise<Profile> => {
@@ -351,7 +374,7 @@ export const profilesQueryAPI = {
       .eq('role', normalizeUserRole(role))
       .order('email', { ascending: true });
     if (error) throw error;
-    return (data || []).map((row) => ({ ...row, role: normalizeUserRole(row.role) }));
+    return normalizeProfileRows(data as (Profile | null)[] | null);
   },
 
   getByDepartment: async (department: string): Promise<Profile[]> => {
@@ -361,7 +384,7 @@ export const profilesQueryAPI = {
       .eq('department', department)
       .order('email', { ascending: true });
     if (error) throw error;
-    return (data || []).map((row) => ({ ...row, role: normalizeUserRole(row.role) }));
+    return normalizeProfileRows(data as (Profile | null)[] | null);
   }
 };
 
@@ -1253,10 +1276,10 @@ export const requestsAPI = {
         delegated_to_profile:profiles!delegated_to(*)
       `)
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
-    return data;
+    return data ?? null;
   },
 
   create: async (request: {
@@ -1283,9 +1306,26 @@ export const requestsAPI = {
         status: request.status || 'Draft',
       })
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      if (isSingleRowCoerceError(error as { message?: string; code?: string })) {
+        throw new Error(
+          'Could not create draft request. Your account may not have permission to create requests yet. Ask WMSU Admin to verify your role/profile.'
+        );
+      }
+      if (isPolicyOrPermissionError(error as { message?: string; code?: string })) {
+        throw new Error(
+          'Could not create draft request due to database policy. Please run migration 20260421170000_requests_insert_policy_allow_department_role.sql, then refresh.'
+        );
+      }
+      throw error;
+    }
+    if (!data) {
+      throw new Error(
+        'Could not create draft request. Your account may not have permission to create requests yet. Ask WMSU Admin to verify your role/profile.'
+      );
+    }
     return data;
   },
 
@@ -1322,9 +1362,26 @@ export const requestsAPI = {
       .update(updates)
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      if (isSingleRowCoerceError(error as { message?: string; code?: string })) {
+        throw new Error(
+          'Could not update this request. It may no longer be editable, or your account does not have permission for this action.'
+        );
+      }
+      if (isPolicyOrPermissionError(error as { message?: string; code?: string })) {
+        throw new Error(
+          'Could not update this draft due to database policy. Please run migration 20260421170000_requests_insert_policy_allow_department_role.sql, then refresh.'
+        );
+      }
+      throw error;
+    }
+    if (!data) {
+      throw new Error(
+        'Could not update this request. It may no longer be editable, or your account does not have permission for this action.'
+      );
+    }
     return data;
   },
 
@@ -1341,6 +1398,9 @@ export const requestsAPI = {
   submit: async (id: string): Promise<Request> => {
     const { data, error } = await supabase.rpc('request_submit_atomic', { p_request_id: id });
     if (error) throw error;
+    if (!data) {
+      throw new Error('Could not submit this draft. It may no longer exist or you do not have access to it.');
+    }
     return data as Request;
   },
 
@@ -1593,8 +1653,84 @@ export const procurementBudgetAPI = {
     budgetTypes: CollegeBudgetType[];
     committedByTypeId: Record<string, number>;
   }> => {
-    const profile = await authAPI.getProfile();
-    if (!profile) {
+    try {
+      const profile = await authAPI.getProfile();
+      if (!profile) {
+        return {
+          college: null,
+          collegeAdminBudget: 0,
+          committedCollege: 0,
+          remainingCollege: 0,
+          fundSources: [],
+          budgetTypes: [],
+          committedByTypeId: {},
+        };
+      }
+      const colleges = await collegesAPI.getAll();
+      const deptName = profile.department?.trim() || profile.faculty_department?.trim() || '';
+      const college = deptName ? colleges.find((c) => c.name === deptName) ?? null : null;
+
+      const fundSources: BudgetFundSource[] = [];
+      const yearBudgets = await budgetsAPI.getCurrentYearBudgets();
+      for (const b of yearBudgets) {
+        const fs = await budgetFundSourcesAPI.getByBudgetId(b.id);
+        fundSources.push(...fs);
+      }
+
+      if (!college) {
+        return {
+          college: null,
+          collegeAdminBudget: 0,
+          committedCollege: 0,
+          remainingCollege: 0,
+          fundSources,
+          budgetTypes: [],
+          committedByTypeId: {},
+        };
+      }
+
+      const budgetTypes = (await collegeBudgetTypesAPI.getByCollegeId(college.id)).filter((t) => t.is_active);
+      const deptProfiles = await profilesQueryAPI.getByDepartment(college.name);
+      const ids = deptProfiles.map((p) => p.id);
+      const rows = ids.length ? await requestsAPI.getByRequesterIds(ids) : [];
+      const committedStatuses: RequestStatus[] = [
+        'Approved',
+        'Procuring',
+        'ProcurementDone',
+        'Received',
+        'Completed',
+      ];
+      const committedCollege = rows
+        .filter((r) => committedStatuses.includes(r.status))
+        .reduce((s, r) => s + Number(r.total_price || 0), 0);
+
+      const handler = college.handler_id ? await profilesAPI.getById(college.handler_id) : null;
+      const collegeAdminBudget = Number(handler?.approved_budget || 0);
+      const remainingCollege = Math.max(0, collegeAdminBudget - committedCollege);
+
+      const committedByTypeId: Record<string, number> = {};
+      for (const t of budgetTypes) {
+        committedByTypeId[t.id] = 0;
+      }
+      for (const r of rows) {
+        if (!committedStatuses.includes(r.status)) continue;
+        const tid = r.college_budget_type_id;
+        if (tid && committedByTypeId[tid] !== undefined) {
+          committedByTypeId[tid] += Number(r.total_price || 0);
+        }
+      }
+
+      return {
+        college,
+        collegeAdminBudget,
+        committedCollege,
+        remainingCollege,
+        fundSources,
+        budgetTypes,
+        committedByTypeId,
+      };
+    } catch (e) {
+      console.warn('[procurementBudgetAPI.getFacultySnapshot] fallback to safe defaults:', e);
       return {
         college: null,
         collegeAdminBudget: 0,
@@ -1605,69 +1741,6 @@ export const procurementBudgetAPI = {
         committedByTypeId: {},
       };
     }
-    const colleges = await collegesAPI.getAll();
-    const deptName = profile.department?.trim() || profile.faculty_department?.trim() || '';
-    const college = deptName ? colleges.find((c) => c.name === deptName) ?? null : null;
-
-    const fundSources: BudgetFundSource[] = [];
-    const yearBudgets = await budgetsAPI.getCurrentYearBudgets();
-    for (const b of yearBudgets) {
-      const fs = await budgetFundSourcesAPI.getByBudgetId(b.id);
-      fundSources.push(...fs);
-    }
-
-    if (!college) {
-      return {
-        college: null,
-        collegeAdminBudget: 0,
-        committedCollege: 0,
-        remainingCollege: 0,
-        fundSources,
-        budgetTypes: [],
-        committedByTypeId: {},
-      };
-    }
-
-    const budgetTypes = (await collegeBudgetTypesAPI.getByCollegeId(college.id)).filter((t) => t.is_active);
-    const deptProfiles = await profilesQueryAPI.getByDepartment(college.name);
-    const ids = deptProfiles.map((p) => p.id);
-    const rows = ids.length ? await requestsAPI.getByRequesterIds(ids) : [];
-    const committedStatuses: RequestStatus[] = [
-      'Approved',
-      'Procuring',
-      'ProcurementDone',
-      'Received',
-      'Completed',
-    ];
-    const committedCollege = rows
-      .filter((r) => committedStatuses.includes(r.status))
-      .reduce((s, r) => s + Number(r.total_price || 0), 0);
-
-    const handler = college.handler_id ? await profilesAPI.getById(college.handler_id) : null;
-    const collegeAdminBudget = Number(handler?.approved_budget || 0);
-    const remainingCollege = Math.max(0, collegeAdminBudget - committedCollege);
-
-    const committedByTypeId: Record<string, number> = {};
-    for (const t of budgetTypes) {
-      committedByTypeId[t.id] = 0;
-    }
-    for (const r of rows) {
-      if (!committedStatuses.includes(r.status)) continue;
-      const tid = r.college_budget_type_id;
-      if (tid && committedByTypeId[tid] !== undefined) {
-        committedByTypeId[tid] += Number(r.total_price || 0);
-      }
-    }
-
-    return {
-      college,
-      collegeAdminBudget,
-      committedCollege,
-      remainingCollege,
-      fundSources,
-      budgetTypes,
-      committedByTypeId,
-    };
   },
 };
 

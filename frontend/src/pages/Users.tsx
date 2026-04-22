@@ -47,6 +47,24 @@ const Users = () => {
   const composeFullName = (firstName: string, middleName: string, lastName: string) =>
     [firstName.trim(), middleName.trim(), lastName.trim()].filter(Boolean).join(' ');
 
+  const generateAutoPassword = (length = 10) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let out = '';
+    const cryptoObj = globalThis.crypto;
+    if (cryptoObj?.getRandomValues) {
+      const random = new Uint32Array(length);
+      cryptoObj.getRandomValues(random);
+      for (let i = 0; i < length; i += 1) {
+        out += chars[random[i] % chars.length];
+      }
+      return out;
+    }
+    for (let i = 0; i < length; i += 1) {
+      out += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return out;
+  };
+
   const extractNameParts = (user: Profile) => {
     const firstName = user.first_name?.trim() || '';
     const middleName = user.middle_initial?.trim() || '';
@@ -226,6 +244,7 @@ const Users = () => {
   const handleCreate = () => {
     setEditingUser(null);
     resetForm();
+    setFormData((prev) => ({ ...prev, password: generateAutoPassword() }));
     setShowModal(true);
   };
 
@@ -540,17 +559,33 @@ const Users = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <Lock className="w-4 h-4 inline mr-2" />
-                    Password
+                    Auto-generated password
                   </label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600"
-                    required
-                    minLength={6}
-                    placeholder="Minimum 6 characters"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.password}
+                      readOnly
+                      className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-900"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          password: generateAutoPassword(),
+                        }))
+                      }
+                      className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm whitespace-nowrap"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Password is generated automatically using letters and numbers only.
+                  </p>
                 </div>
               )}
 

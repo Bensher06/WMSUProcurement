@@ -1,3 +1,4 @@
+import { enrichRowsWithRequesters } from './requestRowEnrich';
 import { supabase, isPersistedSessionAuthFailure, clearPersistedAuthSession } from './supabase';
 import type { RequestWithRelations } from '@/types/requests';
 
@@ -151,8 +152,10 @@ export const collegeAdminAPI = {
     // to read requests submitted by department users under the handled college.
     const rpcResult = await supabase.rpc('mobile_get_college_requests');
     if (!rpcResult.error) {
-      const rows = (rpcResult.data ?? []) as RequestWithRelations[];
+      let rows = (rpcResult.data ?? []) as RequestWithRelations[];
       if (rows.length === 0) return [];
+
+      rows = await enrichRowsWithRequesters(rows);
 
       const categoryIds = Array.from(
         new Set(rows.map((r) => r.category_id).filter((id): id is string => !!id))
@@ -185,7 +188,8 @@ export const collegeAdminAPI = {
       .select(
         `
         *,
-        category:categories(name)
+        category:categories(name),
+        requester:profiles!requester_id(full_name, email, department, faculty_department)
       `
       )
       .in('requester_id', requesterIds)
@@ -202,7 +206,7 @@ export const collegeAdminAPI = {
       .order('created_at', { ascending: false });
 
     if (plain.error) throw new Error(plain.error.message || 'Failed to load request history.');
-    return (plain.data ?? []) as RequestWithRelations[];
+    return enrichRowsWithRequesters((plain.data ?? []) as RequestWithRelations[]);
   },
 };
 

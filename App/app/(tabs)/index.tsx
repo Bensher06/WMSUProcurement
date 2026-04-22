@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { CenteredAlert } from '@/components/CenteredAlert';
+import { RequisitionDetailModal } from '@/components/RequisitionDetailModal';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -47,6 +48,7 @@ export default function HomeScreen() {
   const [progressRequests, setProgressRequests] = useState<RequestWithRelations[]>([]);
   const [facultyLoading, setFacultyLoading] = useState(!isDeptHead);
   const [retryLoading, setRetryLoading] = useState(false);
+  const [detailRequest, setDetailRequest] = useState<RequestWithRelations | null>(null);
 
   const loadFacultyProgress = async () => {
     try {
@@ -210,10 +212,20 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.listContent}>
             {progressRequests.map((req) => (
-              <RequestCard key={req.id} request={req} colors={c} />
+              <RequestCard
+                key={req.id}
+                request={req}
+                colors={c}
+                onPress={() => setDetailRequest(req)}
+              />
             ))}
           </View>
         )}
+        <RequisitionDetailModal
+          visible={detailRequest !== null}
+          request={detailRequest}
+          onClose={() => setDetailRequest(null)}
+        />
       </ParallaxScrollView>
     );
   }

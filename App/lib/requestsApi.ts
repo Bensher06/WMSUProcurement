@@ -1,3 +1,4 @@
+import { enrichRowsWithRequesters } from './requestRowEnrich';
 import { supabase, isPersistedSessionAuthFailure, clearPersistedAuthSession } from './supabase';
 import type { RequestWithRelations } from '@/types/requests';
 
@@ -25,7 +26,8 @@ export const requestsAPI = {
       .select(
         `
         *,
-        category:categories(name)
+        category:categories(name),
+        requester:profiles!requester_id(full_name, email, department, faculty_department)
       `
       )
       .eq('requester_id', user.id)
@@ -43,6 +45,6 @@ export const requestsAPI = {
       .order('created_at', { ascending: false });
 
     if (plain.error) throw plain.error;
-    return (plain.data ?? []) as RequestWithRelations[];
+    return enrichRowsWithRequesters((plain.data ?? []) as RequestWithRelations[]);
   },
 };

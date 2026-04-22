@@ -4,12 +4,43 @@ import { useAuth } from '../context/AuthContext';
 import { collegeBudgetTypesAPI, commentsAPI, requestsAPI } from '../lib/supabaseApi';
 import { supabase } from '../lib/supabaseClient';
 import type { College, RequestWithRelations } from '../types/database';
-import { Eye, Loader2 } from 'lucide-react';
+import { Download, Eye, Filter, Loader2 } from 'lucide-react';
 import RequisitionViewModal from '../components/RequisitionViewModal';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getRequestChatReadAt, markRequestChatReadNow } from '../lib/chatUnread';
 
 const amount = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
+const escapeCsvCell = (value: unknown): string => {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+};
+
+const downloadCsv = (filename: string, headers: string[], rows: Array<Array<unknown>>) => {
+  const headerLine = headers.map(escapeCsvCell).join(',');
+  const rowLines = rows.map((row) => row.map(escapeCsvCell).join(','));
+  const csv = [headerLine, ...rowLines].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+const getReuseCount = (r: RequestWithRelations): number => {
+  const payload = r.requisition_payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 0;
+  const meta = (payload as Record<string, unknown>).meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return 0;
+  const raw = (meta as Record<string, unknown>).reuseCount;
+  return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+};
 
 export default function DeptHeadRequestHistory() {
   const { profile } = useAuth();
@@ -23,8 +54,26 @@ export default function DeptHeadRequestHistory() {
   const [unreadByRequestId, setUnreadByRequestId] = useState<Record<string, number>>({});
   const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
   const [search, setSearch] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handledRequestIdFromUrl = useRef<string | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const FILTER_OPTIONS = useMemo(
+    () =>
+      [
+        { id: 'pending', label: 'Pending', statuses: ['Pending'] },
+        { id: 'approved', label: 'Approved', statuses: ['Approved'] },
+        { id: 'procuring', label: 'Procuring', statuses: ['Procuring'] },
+        {
+          id: 'completed',
+          label: 'Procurement Completed',
+          statuses: ['ProcurementDone', 'Received', 'Completed'],
+        },
+        { id: 'notifications', label: 'Notifications', statuses: ['Rejected', 'ProcurementFailed'] },
+      ] as const,
+    []
+  );
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -105,55 +154,63 @@ export default function DeptHeadRequestHistory() {
     };
   }, [profile?.id, loadRows]);
 
-  const rawStatusTab = (searchParams.get('status') || '').toLowerCase();
+  useEffect(() => {
+    if (!showAdvancedFilters) return;
+    const onDocClick = (event: MouseEvent) => {
+      if (!filterMenuRef.current) return;
+      if (!filterMenuRef.current.contains(event.target as Node)) {
+        setShowAdvancedFilters(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showAdvancedFilters]);
+
   const departmentFilter = (searchParams.get('department') || '').trim();
-  const activeStatusTab: 'all' | 'pending' | 'approved' | 'procuring' | 'history' | 'notifications' =
-    rawStatusTab === 'pending' ||
-    rawStatusTab === 'approved' ||
-    rawStatusTab === 'procuring' ||
-    rawStatusTab === 'history' ||
-    rawStatusTab === 'notifications'
-      ? rawStatusTab
-      : 'all';
+  const filterParamIds = (searchParams.get('filters') || '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  const validFilterIds = new Set(FILTER_OPTIONS.map((o) => o.id));
+  const selectedFilterIds = filterParamIds.filter((id) => validFilterIds.has(id as any));
 
-  const activeWorkflowRows = useMemo(
-    () =>
-      rows.filter(
-        (r) => !['Draft', 'ProcurementDone', 'Received', 'Completed'].includes(r.status)
-      ),
-    [rows]
-  );
-  const procurementHistoryRows = useMemo(
-    () => rows.filter((r) => ['ProcurementDone', 'Received', 'Completed'].includes(r.status)),
-    [rows]
-  );
+  const legacyStatus = (searchParams.get('status') || '').toLowerCase();
+  const fallbackFromLegacy: string[] =
+    legacyStatus === 'pending'
+      ? ['pending']
+      : legacyStatus === 'approved'
+      ? ['approved']
+      : legacyStatus === 'procuring'
+      ? ['procuring']
+      : legacyStatus === 'history'
+      ? ['completed']
+      : legacyStatus === 'notifications'
+      ? ['notifications']
+      : FILTER_OPTIONS.map((o) => o.id);
+  const effectiveFilterIds = selectedFilterIds.length > 0 ? selectedFilterIds : fallbackFromLegacy;
+  const effectiveFilterIdSet = new Set(effectiveFilterIds);
 
-  const setStatusTab = (status: 'all' | 'pending' | 'approved' | 'procuring' | 'history' | 'notifications') => {
+  const setFilterIds = (nextIds: string[]) => {
     const next = new URLSearchParams(searchParams);
-    next.delete('view');
-    if (status === 'all') next.delete('status');
-    else next.set('status', status);
+    next.delete('status');
+    if (nextIds.length === FILTER_OPTIONS.length) next.delete('filters');
+    else next.set('filters', nextIds.join(','));
     setSearchParams(next);
   };
 
-  const statusFilteredRows = useMemo(() => {
-    if (activeStatusTab === 'notifications') {
-      return activeWorkflowRows.filter((r) => ['Rejected', 'ProcurementFailed'].includes(r.status));
-    }
-    if (activeStatusTab === 'pending') {
-      return activeWorkflowRows.filter((r) => r.status === 'Pending');
-    }
-    if (activeStatusTab === 'approved') {
-      return activeWorkflowRows.filter((r) => r.status === 'Approved');
-    }
-    if (activeStatusTab === 'procuring') {
-      return activeWorkflowRows.filter((r) => r.status === 'Procuring');
-    }
-    if (activeStatusTab === 'history') {
-      return procurementHistoryRows;
-    }
-    return activeWorkflowRows;
-  }, [activeWorkflowRows, procurementHistoryRows, activeStatusTab]);
+  const allowedStatuses = useMemo(() => {
+    const s = new Set<string>();
+    FILTER_OPTIONS.forEach((o) => {
+      if (!effectiveFilterIdSet.has(o.id)) return;
+      o.statuses.forEach((status) => s.add(status));
+    });
+    return s;
+  }, [FILTER_OPTIONS, effectiveFilterIdSet]);
+
+  const statusFilteredRows = useMemo(
+    () => rows.filter((r) => r.status !== 'Draft' && allowedStatuses.has(r.status)),
+    [rows, allowedStatuses]
+  );
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -171,12 +228,51 @@ export default function DeptHeadRequestHistory() {
   }, [statusFilteredRows, search, departmentFilter]);
 
   const subtitle = useMemo(() => {
-    if (activeStatusTab === 'notifications') {
-      return 'Rejected and procurement-failed requests from your handled college.';
-    }
     if (!college?.name) return 'Track requests and status updates.';
     return `Requisitions from your college (${college.name}). Open a row to read the full submitted form.`;
-  }, [college?.name, activeStatusTab]);
+  }, [college?.name]);
+
+  const handleExportCsv = () => {
+    const headers = [
+      'RIS No',
+      'SAI No',
+      'Subject',
+      'Requester',
+      'Department',
+      'Status',
+      'Integrity',
+      'Amount',
+      'Request Again Count',
+      'Type Remaining',
+      'Date',
+    ];
+
+    const rowsForCsv = filteredRows.map((r) => {
+      const integrity =
+        !r.submitted_payload_hash || r.last_integrity_reason === 'legacy_unhashed'
+          ? 'Legacy'
+          : `v${r.integrity_version || 1}`;
+      const typeRemaining = r.college_budget_type_id
+        ? amount(typeRemainingById[r.college_budget_type_id] ?? 0)
+        : 'General pool';
+      return [
+        r.ris_no || '',
+        r.sai_no || '',
+        r.item_name || '',
+        r.requester?.full_name || '',
+        r.requester?.faculty_department || '',
+        r.status || '',
+        integrity,
+        Number(r.total_price || 0).toFixed(2),
+        getReuseCount(r),
+        typeRemaining,
+        new Date(r.created_at).toLocaleDateString(),
+      ];
+    });
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    downloadCsv(`dept-head-request-history-${dateTag}.csv`, headers, rowsForCsv);
+  };
 
   const requestIdParam = searchParams.get('requestId');
   useEffect(() => {
@@ -202,39 +298,76 @@ export default function DeptHeadRequestHistory() {
       </div>
 
       <div className="space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {([
-            { id: 'all', label: 'All' },
-            { id: 'pending', label: 'Pending' },
-            { id: 'approved', label: 'Approved' },
-            { id: 'procuring', label: 'Procuring' },
-            { id: 'history', label: 'Procurement Completed' },
-            { id: 'notifications', label: 'Notifications' },
-          ] as const).map((tab) => {
-            const active = activeStatusTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusTab(tab.id)}
-                className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                  active
-                    ? 'bg-red-900 text-white border-red-900'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-        <div>
+        <div className="flex flex-col md:flex-row md:items-center gap-2">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search RIS/SAI, requester, department, item..."
             className="w-full md:w-[420px] px-3 py-2 rounded-lg border border-gray-300 text-sm"
           />
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={filteredRows.length === 0}
+            className="cursor-pointer inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-sm text-emerald-800 hover:bg-emerald-100 active:scale-[0.98] transition disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            Export CSV
+          </button>
+          <div className="relative inline-flex" ref={filterMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFilters((v) => !v)}
+              className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition"
+            >
+              <Filter className="w-4 h-4" />
+              Filter
+              <span className="text-xs text-gray-500">
+                ({effectiveFilterIds.length}/{FILTER_OPTIONS.length})
+              </span>
+            </button>
+            {showAdvancedFilters ? (
+              <div className="absolute top-full left-0 mt-2 z-20 rounded-lg border border-gray-200 bg-white p-3 space-y-3 w-[280px] shadow-lg">
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                  Advanced filtering
+                </p>
+                <div className="space-y-1.5">
+                  {FILTER_OPTIONS.map((opt) => (
+                    <label key={opt.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={effectiveFilterIdSet.has(opt.id)}
+                        onChange={(e) => {
+                          const next = new Set(effectiveFilterIds);
+                          if (e.target.checked) next.add(opt.id);
+                          else next.delete(opt.id);
+                          setFilterIds(Array.from(next));
+                        }}
+                        className="cursor-pointer"
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setFilterIds(FILTER_OPTIONS.map((o) => o.id))}
+                    className="cursor-pointer text-red-900 hover:underline active:opacity-80"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterIds([])}
+                    className="cursor-pointer text-gray-600 hover:underline active:opacity-80"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
         {departmentFilter ? (
           <div className="flex items-center gap-2">
@@ -273,11 +406,12 @@ export default function DeptHeadRequestHistory() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">RIS / SAI No.</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Requisition</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Subject</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Requester</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Integrity</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Request Again Count</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type Budget</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Form</th>
@@ -286,18 +420,8 @@ export default function DeptHeadRequestHistory() {
             <tbody>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
-                    {activeStatusTab === 'notifications'
-                      ? 'No notifications found.'
-                      : activeStatusTab === 'pending'
-                      ? 'No pending requests found.'
-                      : activeStatusTab === 'approved'
-                      ? 'No approved requests found.'
-                      : activeStatusTab === 'procuring'
-                      ? 'No procuring requests found.'
-                      : activeStatusTab === 'history'
-                      ? 'No procurement history yet.'
-                      : 'No requests found.'}
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
+                    No requests match your current filters.
                   </td>
                 </tr>
               ) : (
@@ -313,7 +437,7 @@ export default function DeptHeadRequestHistory() {
                         <span className="text-gray-400 italic">pending</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 max-w-[220px]">
+                    <td className="px-4 py-3 text-sm text-gray-900 max-w-[240px]">
                       <span className="font-medium line-clamp-2">{r.item_name}</span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
@@ -343,6 +467,15 @@ export default function DeptHeadRequestHistory() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{amount(r.total_price || 0)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      {getReuseCount(r) > 0 ? (
+                        <span className="inline-flex rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium">
+                          {getReuseCount(r)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-700 whitespace-nowrap">
                       {r.college_budget_type_id ? (
                         <span className="inline-flex rounded-full bg-blue-50 text-blue-800 px-2 py-0.5">

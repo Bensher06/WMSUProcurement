@@ -1,9 +1,36 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Printer } from 'lucide-react';
 import { integrityAPI, requestsAPI } from '../lib/supabaseApi';
 import { useAuth } from '../context/AuthContext';
 import type { IntegrityEventWithActor, RequestWithRelations } from '../types/database';
+import RequisitionDocumentView from '../components/RequisitionDocumentView';
+import { parseRequisitionDescription } from '../lib/parseRequisitionDescription';
+
+type SnapshotShape = {
+  item_name?: string | null;
+  description?: string | null;
+  quantity?: number | null;
+  unit_price?: number | null;
+  total_price?: number | null;
+  status?: string | null;
+  ris_no?: string | null;
+  sai_no?: string | null;
+};
+
+const toObject = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+const snapshotFromCurrent = (r: RequestWithRelations): SnapshotShape => ({
+  item_name: r.item_name,
+  description: r.description,
+  quantity: r.quantity,
+  unit_price: r.unit_price,
+  total_price: r.total_price,
+  status: r.status,
+  ris_no: r.ris_no,
+  sai_no: r.sai_no,
+});
 
 export default function RequisitionIntegrityTimeline() {
   const { isDeptHead } = useAuth();
@@ -47,6 +74,90 @@ export default function RequisitionIntegrityTimeline() {
     () => !requestRow?.submitted_payload_hash || requestRow.last_integrity_reason === 'legacy_unhashed',
     [requestRow]
   );
+  const submittedSnapshot = useMemo<SnapshotShape | null>(() => {
+    if (!requestRow?.submitted_snapshot || typeof requestRow.submitted_snapshot !== 'object') return null;
+    return requestRow.submitted_snapshot as SnapshotShape;
+  }, [requestRow]);
+  const fallbackOriginalFromFirstEdit = useMemo<SnapshotShape | null>(() => {
+    if (!requestRow) return null;
+    const firstAdminEdit = [...events]
+      .filter((ev) => ev.event_type === 'admin_edit')
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
+    if (!firstAdminEdit) return null;
+    const before = toObject(firstAdminEdit.before_payload);
+    if (!before) return null;
+    return {
+      item_name: requestRow.item_name,
+      description: typeof before.description === 'string' ? before.description : requestRow.description,
+      quantity: typeof before.quantity === 'number' ? before.quantity : requestRow.quantity,
+      unit_price: typeof before.unit_price === 'number' ? before.unit_price : requestRow.unit_price,
+      total_price: typeof before.total_price === 'number' ? before.total_price : requestRow.total_price,
+      status: typeof before.status === 'string' ? before.status : 'Pending',
+      ris_no: requestRow.ris_no,
+      sai_no: requestRow.sai_no,
+    };
+  }, [events, requestRow]);
+  const effectiveOriginalSnapshot = submittedSnapshot || fallbackOriginalFromFirstEdit;
+  const currentSnapshot = useMemo<SnapshotShape | null>(
+    () => (requestRow ? snapshotFromCurrent(requestRow) : null),
+    [requestRow]
+  );
+  const originalRequestForView = useMemo<RequestWithRelations | null>(() => {
+    if (!requestRow || !effectiveOriginalSnapshot) return null;
+    return {
+      ...requestRow,
+      item_name: effectiveOriginalSnapshot.item_name || requestRow.item_name,
+      description: effectiveOriginalSnapshot.description ?? requestRow.description,
+      quantity: Number(effectiveOriginalSnapshot.quantity ?? requestRow.quantity ?? 0),
+      unit_price: Number(effectiveOriginalSnapshot.unit_price ?? requestRow.unit_price ?? 0),
+      total_price: Number(effectiveOriginalSnapshot.total_price ?? requestRow.total_price ?? 0),
+      status: (effectiveOriginalSnapshot.status as any) || requestRow.status,
+      ris_no: effectiveOriginalSnapshot.ris_no ?? requestRow.ris_no,
+      sai_no: effectiveOriginalSnapshot.sai_no ?? requestRow.sai_no,
+    };
+  }, [requestRow, effectiveOriginalSnapshot]);
+  const currentRequestForView = useMemo<RequestWithRelations | null>(() => {
+    if (!requestRow || !currentSnapshot) return null;
+    return {
+      ...requestRow,
+      item_name: currentSnapshot.item_name || requestRow.item_name,
+      description: currentSnapshot.description ?? requestRow.description,
+      quantity: Number(currentSnapshot.quantity ?? requestRow.quantity ?? 0),
+      unit_price: Number(currentSnapshot.unit_price ?? requestRow.unit_price ?? 0),
+      total_price: Number(currentSnapshot.total_price ?? requestRow.total_price ?? 0),
+      status: (currentSnapshot.status as any) || requestRow.status,
+      ris_no: currentSnapshot.ris_no ?? requestRow.ris_no,
+      sai_no: currentSnapshot.sai_no ?? requestRow.sai_no,
+    };
+  }, [requestRow, currentSnapshot]);
+  const originalParsed = useMemo(
+    () => parseRequisitionDescription(originalRequestForView?.description ?? ''),
+    [originalRequestForView?.description]
+  );
+  const currentParsed = useMemo(
+    () => parseRequisitionDescription(currentRequestForView?.description ?? ''),
+    [currentRequestForView?.description]
+  );
+  const hasCollegeAdminEdit = useMemo(
+    () => events.some((ev) => ev.event_type === 'admin_edit'),
+    [events]
+  );
+
+  /** Which RIS block to treat as the sole `print-document-root` for this print job. */
+  const [printFocus, setPrintFocus] = useState<'original' | 'current' | null>(null);
+
+  const printForm = useCallback((which: 'original' | 'current') => {
+    setPrintFocus(which);
+    const clear = () => {
+      setPrintFocus(null);
+      window.removeEventListener('afterprint', clear);
+    };
+    window.addEventListener('afterprint', clear);
+    window.setTimeout(() => {
+      window.print();
+    }, 50);
+    window.setTimeout(clear, 4000);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -81,16 +192,80 @@ export default function RequisitionIntegrityTimeline() {
             <p className="text-xs text-gray-500 mt-1">
               Integrity version: <span className="font-semibold text-gray-800">{requestRow.integrity_version || 1}</span>
             </p>
-            {legacyUnhashed ? (
-              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Legacy record: canonical submitted hash is unavailable. Integrity chain starts from the first controlled admin action.
-              </p>
-            ) : (
-              <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
-                Hash chain anchored. Submitted hash and latest hash are tracked.
-              </p>
-            )}
+            {legacyUnhashed ? null : null}
           </section>
+
+          {hasCollegeAdminEdit ? (
+            <section className="rounded-xl border border-gray-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h2 className="text-base font-semibold text-gray-900">Original vs edited RIS copies</h2>
+                <p className="text-xs text-gray-500">
+                  Same Requisition and Issue Slip format, separated for comparison.
+                </p>
+              </div>
+              {!originalRequestForView || !currentRequestForView ? (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Original submitted form copy is unavailable for this record. This usually happens on older submissions created before snapshot capture was introduced.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <article
+                    className={`rounded-lg border border-red-200 bg-white p-3 overflow-hidden max-w-4xl mx-auto ${
+                      printFocus === 'original' ? 'print-document-root' : ''
+                    } ${printFocus && printFocus !== 'original' ? 'print-hide' : ''}`}
+                  >
+                    <div className="print-hide flex flex-wrap items-start justify-between gap-2 mb-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide font-semibold text-red-800">
+                          Original submitted copy
+                        </p>
+                        {!submittedSnapshot && fallbackOriginalFromFirstEdit ? (
+                          <p className="mt-1 text-[11px] text-amber-800">
+                            Fallback source: first admin edit (before-values).
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => printForm('original')}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-900 hover:bg-red-50"
+                      >
+                        <Printer className="h-3.5 w-3.5" aria-hidden />
+                        Print this form
+                      </button>
+                    </div>
+                    <div className="print-document-content">
+                      <div className="origin-top-left scale-90 w-[111.111111%]">
+                        <RequisitionDocumentView request={originalRequestForView} parsed={originalParsed} />
+                      </div>
+                    </div>
+                  </article>
+                  <article
+                    className={`rounded-lg border border-green-200 bg-white p-3 overflow-hidden max-w-4xl mx-auto ${
+                      printFocus === 'current' ? 'print-document-root' : ''
+                    } ${printFocus && printFocus !== 'current' ? 'print-hide' : ''}`}
+                  >
+                    <div className="print-hide flex flex-wrap items-start justify-between gap-2 mb-2">
+                      <p className="text-xs uppercase tracking-wide font-semibold text-green-800">Current edited copy</p>
+                      <button
+                        type="button"
+                        onClick={() => printForm('current')}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-green-900 hover:bg-green-50"
+                      >
+                        <Printer className="h-3.5 w-3.5" aria-hidden />
+                        Print this form
+                      </button>
+                    </div>
+                    <div className="print-document-content">
+                      <div className="origin-top-left scale-90 w-[111.111111%]">
+                        <RequisitionDocumentView request={currentRequestForView} parsed={currentParsed} />
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section className="space-y-3">
             {events.length === 0 ? (
@@ -112,14 +287,6 @@ export default function RequisitionIntegrityTimeline() {
                       <span className="font-medium">Reason:</span> {ev.reason}
                     </p>
                   ) : null}
-                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600">
-                    <p className="rounded border border-gray-200 bg-gray-50 px-2 py-1">
-                      Hash before: <span className="font-mono">{ev.payload_hash_before || '—'}</span>
-                    </p>
-                    <p className="rounded border border-gray-200 bg-gray-50 px-2 py-1">
-                      Hash after: <span className="font-mono">{ev.payload_hash_after || '—'}</span>
-                    </p>
-                  </div>
                 </article>
               ))
             )}

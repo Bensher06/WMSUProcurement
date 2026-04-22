@@ -6,11 +6,14 @@ import {
   Bell,
   Building2,
   Loader2,
+  Printer,
   PlusCircle,
   ScrollText,
   Wallet,
 } from 'lucide-react';
 import AnalyticsPanel from '../components/AnalyticsPanel';
+import RequisitionViewModal from '../components/RequisitionViewModal';
+import DashboardSummaryModal from '../components/DashboardSummaryModal';
 
 /** System-wide dashboard for Admin users. */
 export default function AdminDashboard() {
@@ -18,6 +21,10 @@ export default function AdminDashboard() {
   const [colleges, setColleges] = useState<College[]>([]);
   const [currentBudget, setCurrentBudget] = useState<Budget | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewing, setViewing] = useState<RequestWithRelations | null>(null);
+  const [budgetSummaryOpen, setBudgetSummaryOpen] = useState(false);
+  const [collegesSummaryOpen, setCollegesSummaryOpen] = useState(false);
+  const [cardHint, setCardHint] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -55,13 +62,56 @@ export default function AdminDashboard() {
     [requests]
   );
 
+  const firstPending = useMemo(() => requests.find((r) => r.status === 'Pending'), [requests]);
+  const firstAttention = useMemo(
+    () => requests.find((r) => ['Rejected', 'ProcurementFailed'].includes(r.status)),
+    [requests]
+  );
+
+  const reloadRequests = async () => {
+    try {
+      const reqRows = await requestsAPI.getAll().catch(() => []);
+      setRequests(reqRows);
+    } catch {
+      /* keep */
+    }
+  };
+
+  const openPendingForm = () => {
+    setCardHint('');
+    if (!firstPending) {
+      setCardHint('No pending requests at the moment.');
+      return;
+    }
+    setViewing(firstPending);
+  };
+
+  const openAttentionForm = () => {
+    setCardHint('');
+    if (!firstAttention) {
+      setCardHint('No rejected or failed requests at the moment.');
+      return;
+    }
+    setViewing(firstAttention);
+  };
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="text-base text-gray-500 mt-1">
-          System-wide overview of procurement activity across all colleges.
-        </p>
+    <div className="space-y-6 print-dashboard-root">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <p className="text-base text-gray-500 mt-1">
+            System-wide overview of procurement activity across all colleges.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="print-hide inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+        >
+          <Printer className="w-4 h-4" />
+          Print Dashboard
+        </button>
       </div>
 
       {loading ? (
@@ -70,6 +120,9 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <>
+          {cardHint ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{cardHint}</div>
+          ) : null}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <p className="text-sm text-gray-500">Current Budget Session</p>
             <p className="text-lg font-semibold text-gray-900 mt-1 inline-flex items-center gap-2">
@@ -86,52 +139,79 @@ export default function AdminDashboard() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Link
-              to="/budget"
-              className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition"
+            <button
+              type="button"
+              onClick={() => {
+                setCardHint('');
+                setBudgetSummaryOpen(true);
+              }}
+              className="text-left w-full bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
             >
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">Budget</p>
                 <Wallet className="w-5 h-5 text-red-900" />
               </div>
               <p className="text-xl font-bold text-gray-900 mt-2">
-                ₱{budgetRemaining.toLocaleString()}
+                ₱{budgetRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Remaining from ₱{budgetTotal.toLocaleString()} allocation
+                Remaining from ₱{budgetTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} allocation — click for printable summary
               </p>
-            </Link>
+            </button>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <button
+              type="button"
+              onClick={openPendingForm}
+              className="text-left w-full bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
+            >
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">Pending Requests</p>
                 <PlusCircle className="w-5 h-5 text-red-900" />
               </div>
               <p className="text-xl font-bold text-gray-900 mt-2">{pendingCount}</p>
-              <p className="text-xs text-gray-500 mt-1">Awaiting approval</p>
-            </div>
+              <p className="text-xs text-gray-500 mt-1">Awaiting approval — click to open first pending form</p>
+            </button>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <button
+              type="button"
+              onClick={openAttentionForm}
+              className="text-left w-full bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
+            >
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">Attention Items</p>
                 <Bell className="w-5 h-5 text-red-900" />
               </div>
               <p className="text-xl font-bold text-gray-900 mt-2">{notificationsCount}</p>
-              <p className="text-xs text-gray-500 mt-1">Rejected / Procurement failed</p>
-            </div>
+              <p className="text-xs text-gray-500 mt-1">Rejected / Procurement failed — click to open form</p>
+            </button>
 
-            <Link
-              to="/colleges"
-              className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition"
+            <button
+              type="button"
+              onClick={() => {
+                setCardHint('');
+                setCollegesSummaryOpen(true);
+              }}
+              className="text-left w-full bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
             >
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">Active Colleges</p>
                 <Building2 className="w-5 h-5 text-red-900" />
               </div>
               <p className="text-xl font-bold text-gray-900 mt-2">{colleges.length}</p>
-              <p className="text-xs text-gray-500 mt-1">Managed colleges</p>
-            </Link>
+              <p className="text-xs text-gray-500 mt-1">Managed colleges — click for printable list</p>
+            </button>
           </div>
+          <p className="text-xs text-gray-500">
+            Full admin pages:{' '}
+            <Link to="/budget" className="text-red-900 hover:underline">
+              Budget
+            </Link>{' '}
+            ·{' '}
+            <Link to="/colleges" className="text-red-900 hover:underline">
+              Colleges
+            </Link>
+            .
+          </p>
 
           <AnalyticsPanel
             requests={requests}
@@ -165,6 +245,47 @@ export default function AdminDashboard() {
               </Link>
             </div>
           </div>
+
+          <DashboardSummaryModal
+            open={budgetSummaryOpen}
+            onClose={() => setBudgetSummaryOpen(false)}
+            title="University budget session (summary)"
+            filenameBase="admin-budget-summary"
+            lines={[
+              {
+                label: 'Academic year',
+                value: currentBudget?.academic_year || 'No active session',
+              },
+              {
+                label: 'Total session budget',
+                value: `₱${budgetTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+              },
+              {
+                label: 'Remaining',
+                value: `₱${budgetRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+              },
+            ]}
+          />
+
+          <DashboardSummaryModal
+            open={collegesSummaryOpen}
+            onClose={() => setCollegesSummaryOpen(false)}
+            title="Active colleges"
+            filenameBase="active-colleges-list"
+            lines={[
+              { label: 'Count', value: String(colleges.length) },
+              ...colleges.map((c) => ({
+                label: c.name,
+                value: c.handler_id ? 'Has college admin' : 'No handler',
+              })),
+            ]}
+          />
+
+          <RequisitionViewModal
+            request={viewing}
+            onClose={() => setViewing(null)}
+            onRecorded={() => void reloadRequests()}
+          />
         </>
       )}
     </div>

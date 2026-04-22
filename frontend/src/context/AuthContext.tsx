@@ -273,41 +273,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         throw new Error('Invalid login credentials');
       }
 
-      // Block sign-in for accounts that are still awaiting College-Admin approval
-      // (or that were declined). The profile row is inserted by the DB trigger with
-      // status='Pending' for self-sign-ups.
-      if (data.user?.id) {
-        try {
-          const { data: profileRow } = await supabase
-            .from('profiles')
-            .select('status')
-            .eq('id', data.user.id)
-            .maybeSingle();
-          const status = (profileRow as { status?: string } | null)?.status;
-          if (status === 'Pending' || status === 'Declined') {
-            setUser(null);
-            setProfile(null);
-            setSession(null);
-            setProfileLoading(false);
-            await supabase.auth.signOut();
-            throw new Error(
-              status === 'Pending'
-                ? 'Your account is awaiting approval from your College Admin.'
-                : 'Your registration was declined. Please contact your College Admin for assistance.'
-            );
-          }
-        } catch (statusErr: any) {
-          // If the lookup itself threw one of our friendly errors, propagate it.
-          const msg = String(statusErr?.message || '');
-          if (msg.startsWith('Your account') || msg.startsWith('Your registration')) {
-            throw statusErr;
-          }
-          // Otherwise, silently let the user through — we don't want a transient
-          // Supabase read error to lock everyone out.
-          console.warn('[Auth] Could not verify profile status:', msg);
-        }
-      }
-
       console.log('✅ Signin successful:', data.user?.email);
 
       // App-level audit log for sign-ins (so Logs can show "recent logins").

@@ -10,12 +10,13 @@ import {
   X,
   Wallet,
   ScrollText,
+  Shield,
   Building2,
   Layers,
   LayoutDashboard,
   History,
   PlusCircle,
-  UserPlus,
+  ClipboardList,
 } from 'lucide-react';
 
 type SidebarProps = {
@@ -30,18 +31,14 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
   const navItems: Array<{ name: string; icon: typeof Wallet; path: string; roles: string[] }> = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/admin/dashboard', roles: ['Admin'] },
     { name: 'Budget', icon: Wallet, path: '/budget', roles: ['Admin'] },
+    { name: 'Users', icon: Shield, path: '/users', roles: ['Admin'] },
     { name: 'Colleges', icon: Building2, path: '/colleges', roles: ['Admin'] },
     { name: 'Logs', icon: ScrollText, path: '/logs', roles: ['Admin'] },
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dept-head/dashboard', roles: ['DeptHead'] },
     { name: 'Budget', icon: Wallet, path: '/dept-head/budget', roles: ['DeptHead'] },
     { name: 'Departments', icon: Layers, path: '/dept-head/departments', roles: ['DeptHead'] },
-    {
-      name: 'Registration Requests',
-      icon: UserPlus,
-      path: '/dept-head/registration-requests',
-      roles: ['DeptHead'],
-    },
     { name: 'Request & History', icon: History, path: '/dept-head/request-history', roles: ['DeptHead'] },
+    { name: 'Procurement History', icon: ClipboardList, path: '/dept-head/procurement-history', roles: ['DeptHead'] },
     { name: 'Dashboard', icon: LayoutDashboard, path: '/faculty/dashboard', roles: ['Faculty'] },
     { name: 'New Request', icon: PlusCircle, path: '/faculty/new-request', roles: ['Faculty'] },
     { name: 'Request & History', icon: History, path: '/faculty/request-history', roles: ['Faculty'] },

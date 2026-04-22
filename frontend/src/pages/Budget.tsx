@@ -7,6 +7,20 @@ import { CenteredAlert } from '../components/CenteredAlert';
 const isPermissionDenied = (err: any) =>
   !!err && (String(err?.message || '').toLowerCase().includes('permission denied') || err?.code === '42501');
 
+const buildAcademicYearOptions = () => {
+  const now = new Date().getFullYear();
+  const startYear = now - 40;
+  const endYear = now + 60;
+  const options: string[] = [];
+  for (let y = startYear; y <= endYear; y += 1) {
+    options.push(`${y}-${y + 1}`);
+  }
+  return options;
+};
+
+const formatMoney = (n: number) =>
+  Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export default function Budget() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -19,6 +33,7 @@ export default function Budget() {
   const [showAddBudgetModal, setShowAddBudgetModal] = useState(false);
   const [year, setYear] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
+  const academicYearOptions = buildAcademicYearOptions();
 
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [currentBudget, setCurrentBudget] = useState<Budget | null>(null);
@@ -127,7 +142,7 @@ export default function Budget() {
       await budgetsAPI.createSession({ academic_year: y, total_amount: amt });
       setSuccess(
         carryOver > 0
-          ? `Budget session started. Carry-over from previous session (₱${carryOver.toLocaleString()}) was added automatically.`
+          ? `Budget session started. Carry-over from previous session (₱${formatMoney(carryOver)}) was added automatically.`
           : 'Budget session started.'
       );
       setYear('');
@@ -214,8 +229,8 @@ export default function Budget() {
 
       setSuccess(
         insertedDeltaTotal > 0
-          ? `Allocations saved. Added ₱${insertedDeltaTotal.toLocaleString()} new distribution to this session. Session distributed total is now ₱${distributedTotal.toLocaleString()}.`
-          : `No new distribution added. Session distributed total remains ₱${distributedTotal.toLocaleString()}.`
+          ? `Allocations saved. Added ₱${formatMoney(insertedDeltaTotal)} new distribution to this session. Session distributed total is now ₱${formatMoney(distributedTotal)}.`
+          : `No new distribution added. Session distributed total remains ₱${formatMoney(distributedTotal)}.`
       );
       await load();
     } catch (e: any) {
@@ -271,8 +286,7 @@ export default function Budget() {
       }
     : null;
 
-  const fmt = (n: number) =>
-    n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const fmt = (n: number) => formatMoney(n);
   const isSessionAllocationLocked = allocationHistory.length > 0;
 
   return (
@@ -332,14 +346,24 @@ export default function Budget() {
             <form onSubmit={handleCreateBudget} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Academic year</label>
-                <input
-                  type="text"
+                <select
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
-                  placeholder="e.g. 2025-2026"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-red-600"
                   autoFocus
-                />
+                >
+                  <option value="">Select academic year</option>
+                  {academicYearOptions.map((optionYear) => (
+                    <option key={optionYear} value={optionYear}>
+                      {optionYear}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 -mt-2">
+                  Scroll the dropdown to choose any academic year.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Total amount (₱)</label>
@@ -457,9 +481,9 @@ export default function Budget() {
                 budgets.map((b) => (
                   <tr key={b.id} className="hover:bg-gray-50">
                     <td className="px-6 py-3 font-medium text-gray-900">{b.academic_year}</td>
-                    <td className="px-6 py-3 text-right tabular-nums">{b.total_amount.toLocaleString()}</td>
-                    <td className="px-6 py-3 text-right tabular-nums">{b.spent_amount.toLocaleString()}</td>
-                    <td className="px-6 py-3 text-right tabular-nums">{b.remaining_amount.toLocaleString()}</td>
+                    <td className="px-6 py-3 text-right tabular-nums">{formatMoney(b.total_amount)}</td>
+                    <td className="px-6 py-3 text-right tabular-nums">{formatMoney(b.spent_amount)}</td>
+                    <td className="px-6 py-3 text-right tabular-nums">{formatMoney(b.remaining_amount)}</td>
                   </tr>
                 ))
               )}
@@ -529,7 +553,7 @@ export default function Budget() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900">{college.name}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Method: {college.allocation_mode === 'percentage' ? `Percentage (${college.allocation_value}%)` : `Direct amount (₱${Number(college.allocation_value).toLocaleString()})`}
+                    Method: {college.allocation_mode === 'percentage' ? `Percentage (${college.allocation_value}%)` : `Direct amount (₱${formatMoney(Number(college.allocation_value))})`}
                   </p>
                   {!deptHead ? (
                     <p className="text-xs text-amber-700 mt-1">No College Admin assigned for this college yet. Create one under Users.</p>

@@ -201,18 +201,6 @@ const Login = () => {
               )}
             </button>
 
-            <div className="flex items-center gap-3 text-xs text-gray-400">
-              <span className="flex-1 h-px bg-gray-200" />
-              <span className="uppercase tracking-wider">or</span>
-              <span className="flex-1 h-px bg-gray-200" />
-            </div>
-
-            <Link
-              to="/signup"
-              className="w-full py-3 px-4 border-2 border-red-900 text-red-900 font-semibold rounded-lg transition-colors hover:bg-red-50 text-center block"
-            >
-              Sign up for Department
-            </Link>
           </form>
         </div>
 

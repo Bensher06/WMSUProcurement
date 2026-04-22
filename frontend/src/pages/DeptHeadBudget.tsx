@@ -5,7 +5,8 @@ import { collegeBudgetTypesAPI, collegesAPI, profilesAPI, profilesQueryAPI, requ
 import type { College, CollegeBudgetType, RequestWithRelations } from '../types/database';
 import { Loader2, Plus, Trash2, Wallet, X } from 'lucide-react';
 
-const money = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
+const money = (n: number) =>
+  `₱${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function DeptHeadBudget() {
   const { profile } = useAuth();

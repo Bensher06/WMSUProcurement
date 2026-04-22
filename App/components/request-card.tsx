@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { StatusBadge } from '@/components/StatusBadge';
 import { ThemedText } from '@/components/themed-text';
@@ -9,9 +9,11 @@ type ThemeColors = { card: string; border: string; text: string };
 export function RequestCard({
   request,
   colors,
+  onPress,
 }: {
   request: RequestWithRelations;
   colors: ThemeColors;
+  onPress?: () => void;
 }) {
   const created = new Date(request.created_at).toLocaleDateString();
   const timeline: string[] = [`Created: ${created}`];
@@ -20,8 +22,8 @@ export function RequestCard({
   if (request.received_at)
     timeline.push(`Received: ${new Date(request.received_at).toLocaleDateString()}`);
 
-  return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+  const inner = (
+    <>
       <View style={styles.cardRow}>
         <ThemedText type="defaultSemiBold" style={styles.itemName} numberOfLines={2}>
           {request.item_name}
@@ -49,6 +51,28 @@ export function RequestCard({
       <View style={styles.timeline}>
         <ThemedText style={styles.timelineText}>{timeline.join(' · ')}</ThemedText>
       </View>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Open requisition: ${request.item_name}`}
+        style={({ pressed }) => [
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          pressed && styles.cardPressed,
+        ]}>
+        {inner}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {inner}
     </View>
   );
 }
@@ -59,6 +83,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 12,
+  },
+  cardPressed: {
+    opacity: 0.92,
   },
   cardRow: {
     flexDirection: 'row',

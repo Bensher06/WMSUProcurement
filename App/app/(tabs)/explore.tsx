@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { CenteredAlert } from '@/components/CenteredAlert';
+import { RequisitionDetailModal } from '@/components/RequisitionDetailModal';
 import { RequestCard } from '@/components/request-card';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
@@ -38,6 +39,7 @@ export default function RequestHistoryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [retryLoading, setRetryLoading] = useState(false);
+  const [detailRequest, setDetailRequest] = useState<RequestWithRelations | null>(null);
 
   const loadCollegeRequests = async () => {
     try {
@@ -184,10 +186,20 @@ export default function RequestHistoryScreen() {
       ) : (
         <View style={styles.listContent}>
           {requests.map((req) => (
-            <RequestCard key={req.id} request={req} colors={c} />
+            <RequestCard
+              key={req.id}
+              request={req}
+              colors={c}
+              onPress={() => setDetailRequest(req)}
+            />
           ))}
         </View>
       )}
+      <RequisitionDetailModal
+        visible={detailRequest !== null}
+        request={detailRequest}
+        onClose={() => setDetailRequest(null)}
+      />
     </ParallaxScrollView>
   );
 }

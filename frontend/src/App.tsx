@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
-import SignUp from './pages/SignUp';
 import Setup from './pages/Setup';
 import Landing from './pages/Landing';
 import Help from './pages/Help';
@@ -11,6 +10,7 @@ import AdminHelp from './pages/AdminHelp';
 import Budget from './pages/Budget';
 import Logs from './pages/Logs';
 import Colleges from './pages/Colleges';
+import Users from './pages/Users';
 import AdminRoute from './components/AdminRoute';
 import FacultyRoute from './components/FacultyRoute';
 import DeptHeadRoute from './components/DeptHeadRoute';
@@ -20,11 +20,12 @@ import FacultyRequestHistory from './pages/FacultyRequestHistory';
 import DeptHeadHome from './pages/DeptHeadHome';
 import DeptHeadBudget from './pages/DeptHeadBudget';
 import DeptHeadRequestHistory from './pages/DeptHeadRequestHistory';
+import DeptHeadProcurementHistory from './pages/DeptHeadProcurementHistory';
 import DeptHeadDepartments from './pages/DeptHeadDepartments';
 import DeptHeadHelp from './pages/DeptHeadHelp';
-import RegistrationRequests from './pages/RegistrationRequests';
 import AdminDashboard from './pages/AdminDashboard';
 import RequisitionIntegrityTimeline from './pages/RequisitionIntegrityTimeline';
+
 function App() {
   return (
     <AuthProvider>
@@ -35,7 +36,7 @@ function App() {
           <Route path="/landing" element={<Landing />} />
           <Route path="/help" element={<Help />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<SignUp />} />
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route path="/setup" element={<Setup />} />
           
           {/* Authenticated layout: admin + faculty */}
@@ -53,11 +54,8 @@ function App() {
               <Route path="/dept-head/dashboard" element={<DeptHeadHome />} />
               <Route path="/dept-head/budget" element={<DeptHeadBudget />} />
               <Route path="/dept-head/departments" element={<DeptHeadDepartments />} />
-              <Route
-                path="/dept-head/registration-requests"
-                element={<RegistrationRequests />}
-              />
               <Route path="/dept-head/request-history" element={<DeptHeadRequestHistory />} />
+              <Route path="/dept-head/procurement-history" element={<DeptHeadProcurementHistory />} />
               <Route path="/dept-head/requisition-integrity" element={<RequisitionIntegrityTimeline />} />
               <Route path="/dept-head/help" element={<DeptHeadHelp />} />
             </Route>
@@ -65,8 +63,7 @@ function App() {
               <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/budget" element={<Budget />} />
-              {/* Legacy /users route is retired; user management moved into Colleges details. */}
-              <Route path="/users" element={<Navigate to="/colleges" replace />} />
+              <Route path="/users" element={<Users />} />
               <Route path="/colleges" element={<Colleges />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/admin-help" element={<AdminHelp />} />

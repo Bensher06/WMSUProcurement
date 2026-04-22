@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import {
   commentsAPI,
   integrityAPI,
-  registrationAPI,
   requestsAPI,
 } from '../lib/supabaseApi';
 import { getRequestChatReadAt, markRequestChatReadNow } from '../lib/chatUnread';
@@ -14,10 +13,8 @@ import {
   cleanupHeaderNotificationDismissals,
   dismissAttentionNotification,
   dismissPendingNotification,
-  getRegistrationSeenCount,
   isAttentionNotificationDismissed,
   isPendingNotificationDismissed,
-  markRegistrationNotificationsSeen,
 } from '../lib/headerNotificationDismiss';
 
 type NotifState = {
@@ -26,7 +23,6 @@ type NotifState = {
   pendingCollegeAllIds: string[];
   unreadChats: { id: string; label: string }[];
   attention: { id: string; label: string; reason: string; status: string }[];
-  pendingRegistrations: number;
 };
 
 const emptyState: NotifState = {
@@ -35,7 +31,6 @@ const emptyState: NotifState = {
   pendingCollegeAllIds: [],
   unreadChats: [],
   attention: [],
-  pendingRegistrations: 0,
 };
 
 export default function HeaderNotifications() {
@@ -79,17 +74,6 @@ export default function HeaderNotifications() {
           unreadChats.push({ id: r.id, label: r.item_name });
         }
 
-        let pendingRegistrations = 0;
-        const collegeName = profile.department?.trim();
-        if (collegeName) {
-          try {
-            const regs = await registrationAPI.listPendingForCollege(collegeName);
-            pendingRegistrations = regs.length;
-          } catch {
-            pendingRegistrations = 0;
-          }
-        }
-
         setData({
           pendingCollege: pendingActive.slice(0, 5).map((r) => ({ id: r.id, label: r.item_name })),
           pendingCollegeTotal: pendingActive.length,
@@ -101,7 +85,6 @@ export default function HeaderNotifications() {
             reason: (r.rejection_reason || 'No reason recorded.').trim(),
             status: r.status,
           })),
-          pendingRegistrations,
         });
       } else if (isFaculty()) {
         const requests = await requestsAPI.getMyRequests();
@@ -140,7 +123,6 @@ export default function HeaderNotifications() {
             reason: (r.rejection_reason || 'No reason recorded.').trim(),
             status: r.status,
           })),
-          pendingRegistrations: 0,
         });
       } else {
         setData(emptyState);
@@ -173,20 +155,13 @@ export default function HeaderNotifications() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  const registrationBadgeActive =
-    isDeptHead() &&
-    user?.id &&
-    data.pendingRegistrations > getRegistrationSeenCount(user.id);
-
   const badgeCount = useMemo(() => {
     const ids = new Set<string>();
     data.pendingCollegeAllIds.forEach((id) => ids.add(id));
     data.unreadChats.forEach((u) => ids.add(u.id));
     data.attention.forEach((a) => ids.add(a.id));
-    let n = ids.size;
-    if (registrationBadgeActive) n += 1;
-    return n;
-  }, [data, registrationBadgeActive]);
+    return ids.size;
+  }, [data]);
 
   if (isAdmin() || !profile?.id || (!isDeptHead() && !isFaculty())) {
     return null;
@@ -210,14 +185,6 @@ export default function HeaderNotifications() {
     if (user?.id) {
       dismissAttentionNotification(user.id, requestId);
       markRequestChatReadNow(user.id, requestId);
-    }
-    setOpen(false);
-    refresh();
-  };
-
-  const onRegistrationSectionClick = () => {
-    if (user?.id) {
-      markRegistrationNotificationsSeen(user.id, data.pendingRegistrations);
     }
     setOpen(false);
     refresh();
@@ -339,22 +306,6 @@ export default function HeaderNotifications() {
                   </li>
                 ))}
               </ul>
-            </Section>
-          ) : null}
-
-          {isDeptHead() && registrationBadgeActive ? (
-            <Section title="Registration approvals">
-              <p className="text-xs text-gray-600 mb-2">
-                {data.pendingRegistrations} pending applicant
-                {data.pendingRegistrations === 1 ? '' : 's'} for your college.
-              </p>
-              <Link
-                to="/dept-head/registration-requests"
-                onClick={() => onRegistrationSectionClick()}
-                className="inline-flex text-sm font-medium text-red-900 hover:underline"
-              >
-                Open registration requests →
-              </Link>
             </Section>
           ) : null}
 

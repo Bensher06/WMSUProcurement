@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, MessageSquareWarning, Printer, X, XCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Check, Download, Loader2, MessageSquareWarning, Printer, X, XCircle } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import type { CommentWithAuthor, IntegrityEventWithActor, Request, RequestWithRelations } from '../types/database';
 import {
   parseRequisitionDescription,
@@ -22,9 +22,12 @@ type Props = {
 };
 
 const peso = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
+const toObject = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
 export default function RequisitionViewModal({ request, onClose, onRecorded }: Props) {
   const { profile, isDeptHead, isFaculty } = useAuth();
+  const navigate = useNavigate();
   const [myCollege, setMyCollege] = useState<{ id: string; name: string } | null>(null);
   const [qtyReceived, setQtyReceived] = useState('');
   const [deliveryRemarks, setDeliveryRemarks] = useState('');
@@ -62,6 +65,8 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
   const [commentError, setCommentError] = useState('');
   const [commentSending, setCommentSending] = useState(false);
   const [commentFile, setCommentFile] = useState<File | null>(null);
+  const [reusing, setReusing] = useState(false);
+  const [reuseMessage, setReuseMessage] = useState('');
 
   const parsed = useMemo(
     () => (request ? parseRequisitionDescription(request.description) : null),
@@ -250,6 +255,11 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     isFaculty() &&
     isOwnFacultyRequest &&
     request.status === 'ProcurementDone';
+  const canReuseForFaculty =
+    !!request &&
+    isFaculty() &&
+    isOwnFacultyRequest &&
+    ['Rejected', 'ProcurementFailed'].includes(request.status);
 
   const showApprovalBar =
     !!request && isDeptHead() && !!myCollege && request.status === 'Pending' && !adjustEditMode;
@@ -582,6 +592,38 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
     }
   };
 
+  const onDownloadForm = () => {
+    if (!request) return;
+    const lines = [
+      'WMSU PROCUREMENT — REQUISITION (TEXT EXPORT)',
+      '',
+      `Subject: ${request.item_name}`,
+      `RIS: ${request.ris_no || '—'}`,
+      `SAI: ${request.sai_no || '—'}`,
+      `Status: ${request.status}`,
+      `Quantity: ${request.quantity ?? '—'}`,
+      `Unit price: ${peso(Number(request.unit_price || 0))}`,
+      `Line total: ${peso(Number(request.total_price || 0))}`,
+      `Requester: ${request.requester?.full_name || '—'}`,
+      `College: ${request.requester?.department || '—'}`,
+      `Department: ${request.requester?.faculty_department || '—'}`,
+      '',
+      '--- DESCRIPTION ---',
+      String(request.description || '').trim() || '(none)',
+    ];
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safe = String(request.ris_no || request.id).replace(/[^\w.-]+/g, '_');
+    a.download = `requisition-${safe}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const onSendComment = async () => {
     if (!request) return;
     if (!chatAllowed) {
@@ -613,6 +655,53 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
       setCommentError(e?.message || 'Could not send message.');
     } finally {
       setCommentSending(false);
+    }
+  };
+
+  const onReuseForm = async () => {
+    if (!request || !canReuseForFaculty) return;
+    setReuseMessage('');
+    setReusing(true);
+    try {
+      const payloadObj = toObject(request.requisition_payload);
+      const metaObj = toObject(payloadObj?.meta);
+      const lineageId =
+        typeof metaObj?.lineageId === 'string' && metaObj.lineageId.trim()
+          ? metaObj.lineageId.trim()
+          : request.id;
+      const currentReuseCount =
+        typeof metaObj?.reuseCount === 'number' && Number.isFinite(metaObj.reuseCount)
+          ? Number(metaObj.reuseCount)
+          : 0;
+      const nextReuseCount = currentReuseCount + 1;
+      const nextPayload = {
+        ...(payloadObj || {}),
+        meta: {
+          ...(metaObj || {}),
+          lineageId,
+          reuseCount: nextReuseCount,
+          reusedFromRequestId: request.id,
+          reusedAt: new Date().toISOString(),
+        },
+      };
+      const created = await requestsAPI.create({
+        item_name: request.item_name,
+        description: request.description || '',
+        requisition_payload: nextPayload,
+        quantity: Number(request.quantity || 1),
+        unit_price: Number(request.unit_price || 0),
+        budget_fund_source_id: request.budget_fund_source_id || null,
+        college_budget_type_id: request.college_budget_type_id || null,
+        status: 'Draft',
+      });
+      setReuseMessage('Draft prepared. Opening the form so you can edit and send again.');
+      onRecorded?.();
+      onClose();
+      navigate(`/faculty/new-request?draftId=${created.id}`);
+    } catch (e: any) {
+      setReuseMessage(e?.message || 'Could not prepare this request again draft.');
+    } finally {
+      setReusing(false);
     }
   };
 
@@ -666,6 +755,14 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
             </button>
             <button
               type="button"
+              onClick={onDownloadForm}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </button>
+            <button
+              type="button"
               onClick={onClose}
               className="shrink-0 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
               aria-label="Close"
@@ -674,20 +771,23 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
             </button>
           </div>
         </div>
-        <div className="print-document-content px-4 py-6 sm:px-8 sm:pb-4">
-          {parsed && (
-            <RequisitionDocumentView
-              request={request}
-              parsed={parsed}
-              editableLineItems={editableLineItems}
-              lockCollegeSignatories={!!structuredParsed && isFaculty()}
-              receivedByEdit={receivedByEdit}
-              showBudgetTypeUsed={isDeptHead()}
-            />
-          )}
+        <div className="px-4 py-6 sm:px-8 sm:pb-4">
+          {parsed ? (
+            <div className="print-document-content">
+              <RequisitionDocumentView
+                request={request}
+                parsed={parsed}
+                editableLineItems={editableLineItems}
+                lockCollegeSignatories={!!structuredParsed && isFaculty()}
+                receivedByEdit={receivedByEdit}
+                showBudgetTypeUsed={isDeptHead()}
+              />
+            </div>
+          ) : null}
 
+          <div className="print-hide space-y-6 mt-6">
           {(request.rejection_reason || integrityRows.length > 0 || integrityLoading) && (
-            <section className="mt-6 rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+            <section className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">College admin history</h3>
               {request.rejection_reason ? (
                 <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -829,8 +929,29 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
             </div>
           </section>
 
+          {canReuseForFaculty ? (
+            <section className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <h3 className="text-sm font-semibold text-amber-950 mb-1">Request this form again</h3>
+              <p className="text-xs text-amber-900/90 mb-3">
+                This request is {request.status}. Create a new editable draft from this form, then submit it again to your college admin.
+              </p>
+              {reuseMessage ? (
+                <p className="text-xs text-amber-900 mb-2">{reuseMessage}</p>
+              ) : null}
+              <button
+                type="button"
+                disabled={reusing}
+                onClick={() => void onReuseForm()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-700 text-white text-sm hover:bg-amber-800 disabled:opacity-50"
+              >
+                {reusing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Request Again
+              </button>
+            </section>
+          ) : null}
+
           {showDeliveryForm && (
-            <div className="print-hide mt-8 rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">
+            <div className="mt-8 rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">
               <h3 className="text-sm font-semibold text-blue-950">Record received (Department)</h3>
               <p className="text-xs text-blue-900/80">
                 Available after your college admin marks procurement done. Enter actual quantity received; if less than
@@ -883,6 +1004,7 @@ export default function RequisitionViewModal({ request, onClose, onRecorded }: P
               </button>
             </div>
           )}
+          </div>
         </div>
 
         {adjustEditMode && (

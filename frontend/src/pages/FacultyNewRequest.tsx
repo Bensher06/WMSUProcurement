@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { procurementBudgetAPI, requestsAPI } from '../lib/supabaseApi';
 import type { RequestWithRelations } from '../types/database';
 import { CenteredAlert } from '../components/CenteredAlert';
@@ -52,6 +53,7 @@ const NUMERIC_ONLY_RE = /^[\d.,]+$/;
 const DEFAULT_UNIT_FALLBACK = 'pcs';
 
 export default function FacultyNewRequest() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { profile } = useAuth();
   // Division = user's College (profile.department); Office/Section = user's
   // Department (profile.faculty_department). These are locked to the signed-in
@@ -63,6 +65,7 @@ export default function FacultyNewRequest() {
   // RIS No. / SAI No. are assigned by the database trigger
   // `requests_assign_ris_sai` when the request transitions to `Pending`.
   // They are intentionally NOT captured from the UI.
+  const [subject, setSubject] = useState('');
   const [purpose, setPurpose] = useState('');
 
   const [requestedByName, setRequestedByName] = useState('');
@@ -100,7 +103,13 @@ export default function FacultyNewRequest() {
   };
 
   useEffect(() => {
-    void procurementBudgetAPI.getFacultySnapshot().then(setBudgetSnap);
+    void procurementBudgetAPI
+      .getFacultySnapshot()
+      .then(setBudgetSnap)
+      .catch((e: any) => {
+        setBudgetSnap(null);
+        setError(e?.message || 'Failed to load budget snapshot.');
+      });
   }, []);
 
   useEffect(() => {
@@ -126,6 +135,7 @@ export default function FacultyNewRequest() {
   }, []);
 
   const draftRows = useMemo(() => rows.filter((r) => r.status === 'Draft'), [rows]);
+  const draftIdParam = (searchParams.get('draftId') || '').trim();
 
   const computedRows = useMemo(() => {
     return lines.map((l) => {
@@ -157,6 +167,7 @@ export default function FacultyNewRequest() {
   const resetForm = () => {
     // Division / Office-Section come from the profile and must not be cleared.
     // RIS / SAI numbers are assigned server-side on submit.
+    setSubject('');
     setPurpose('');
 
     setRequestedByName('');
@@ -217,6 +228,10 @@ export default function FacultyNewRequest() {
     budget_fund_source_id: string | null;
     college_budget_type_id: string | null;
   } => {
+    const cleanSubject = subject.trim();
+    if (!cleanSubject) {
+      return { error: 'Subject is required.' };
+    }
     const validLines = computedRows.filter((l) => l.itemDescription.trim() && l.qty > 0);
     if (validLines.length === 0) {
       return { error: 'Add at least one line item with item description and quantity.' };
@@ -264,10 +279,6 @@ export default function FacultyNewRequest() {
       .join('\n');
 
     const avgUnitPrice = totalQty > 0 ? grandTotal / totalQty : 0;
-    // RIS No. is assigned on submit; until then use office/division as a human
-    // label. Once the trigger runs the history view pulls the real number from
-    // `requests.ris_no`.
-    const requestTitle = `Requisition - ${officeSection || division || 'Draft'}`;
     const requisitionPayload = {
       header: {
         fundingSource: fundLabel || '-',
@@ -292,7 +303,7 @@ export default function FacultyNewRequest() {
     };
 
     return {
-      item_name: requestTitle.slice(0, 120),
+      item_name: cleanSubject.slice(0, 120),
       description: descriptionText,
       requisition_payload: requisitionPayload,
       quantity: Math.max(1, Math.round(totalQty)),
@@ -307,7 +318,13 @@ export default function FacultyNewRequest() {
     setError('');
     setSuccess('');
 
-    const payload = buildRequisitionCreatePayload();
+    let payload: ReturnType<typeof buildRequisitionCreatePayload>;
+    try {
+      payload = buildRequisitionCreatePayload();
+    } catch (err: any) {
+      setError(err?.message || 'Could not build requisition payload. Please refresh and try again.');
+      return;
+    }
     if ('error' in payload) {
       setError(payload.error);
       return;
@@ -340,7 +357,18 @@ export default function FacultyNewRequest() {
     setError('');
     setSuccess('');
 
-    const payload = buildRequisitionCreatePayload();
+    let payload: ReturnType<typeof buildRequisitionCreatePayload>;
+    try {
+      payload = buildRequisitionCreatePayload();
+    } catch (err: any) {
+      // Fallback path: if this is an existing draft, still allow submit of saved draft data.
+      if (editingDraftId) {
+        await onSubmitDraft(editingDraftId);
+        return;
+      }
+      setError(err?.message || 'Could not build requisition payload. Please refresh and try again.');
+      return;
+    }
     if ('error' in payload) {
       setError(payload.error);
       return;
@@ -348,11 +376,19 @@ export default function FacultyNewRequest() {
 
     setLoading(true);
     try {
-      const created = await requestsAPI.create({
-        ...payload,
-        status: 'Draft',
-      });
-      await requestsAPI.submit(created.id);
+      if (editingDraftId) {
+        await requestsAPI.update(editingDraftId, {
+          ...payload,
+          status: 'Draft',
+        });
+        await requestsAPI.submit(editingDraftId);
+      } else {
+        const created = await requestsAPI.create({
+          ...payload,
+          status: 'Draft',
+        });
+        await requestsAPI.submit(created.id);
+      }
       resetForm();
       await loadMine();
       setSuccess('Request sent to your assigned college (Pending). College Admin can review it in Request & History.');
@@ -417,6 +453,7 @@ export default function FacultyNewRequest() {
       return;
     }
     const { header, items, signatories } = parsed;
+    setSubject(draft.item_name || '');
     setPurpose(header['Purpose'] || '');
     setRequestedByName(signatories.requestedBy.name === '-' ? '' : signatories.requestedBy.name);
     setRequestedByDesignation(signatories.requestedBy.designation === '-' ? '' : signatories.requestedBy.designation);
@@ -449,6 +486,16 @@ export default function FacultyNewRequest() {
     setEditingDraftId(draft.id);
     setSuccess('Loaded draft for editing.');
   };
+
+  useEffect(() => {
+    if (!draftIdParam || rows.length === 0) return;
+    const targetDraft = rows.find((r) => r.id === draftIdParam && r.status === 'Draft');
+    if (!targetDraft) return;
+    onEditDraft(targetDraft);
+    const next = new URLSearchParams(searchParams);
+    next.delete('draftId');
+    setSearchParams(next, { replace: true });
+  }, [draftIdParam, rows, searchParams, setSearchParams]);
 
   const onDeleteDraft = async (draft: RequestWithRelations) => {
     const confirmed = window.confirm(`Delete draft "${draft.item_name}"? This cannot be undone.`);
@@ -547,6 +594,19 @@ export default function FacultyNewRequest() {
                 generated in the format <code className="font-mono">RIS-YYYY-0001</code> when the
                 request is sent, and will appear in your Request &amp; History.
               </p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-800 mb-1">
+                Subject <span className="text-red-700">*</span>
+              </label>
+              <input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-600 focus:border-red-600"
+                placeholder="Enter request subject"
+                required
+                maxLength={120}
+              />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-800 mb-1">Purpose</label>
@@ -725,7 +785,6 @@ export default function FacultyNewRequest() {
               </tbody>
             </table>
           </div>
-
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -735,6 +794,16 @@ export default function FacultyNewRequest() {
               <PlusCircle className="w-4 h-4" />
               Add line
             </button>
+          </div>
+
+          <div className="mt-3 w-fit ml-auto rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-red-800">Live requisition total</p>
+            <p className="mt-1 text-base text-gray-900">
+              Requested Qty: <span className="font-bold">{totalQty}</span>
+              <span className="mx-2 text-gray-400">|</span>
+              Estimated total: <span className="font-bold text-red-900">{money(grandTotal)}</span>
+            </p>
+            {editingDraftId ? <span className="ml-2 text-amber-700">(Editing draft)</span> : null}
           </div>
 
           <div className="border-t border-gray-100 pt-5">
@@ -850,9 +919,6 @@ export default function FacultyNewRequest() {
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="text-sm text-gray-600 space-y-1">
-                Requested Qty: <span className="font-semibold text-gray-900">{totalQty}</span> | Estimated total:{' '}
-                <span className="font-semibold text-gray-900">{money(grandTotal)}</span>
-                {editingDraftId ? <span className="ml-2 text-amber-700">(Editing draft)</span> : null}
                 {budgetSnap && (
                   <p className="text-xs text-gray-600">
                     Budget Ceiling: College available{' '}

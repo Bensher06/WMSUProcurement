@@ -25,6 +25,9 @@ export interface Request {
   unit_price: number;
   total_price: number;
   status: RequestStatus;
+  /** Assigned when request moves to Pending (e.g. RIS-2026-0001). */
+  ris_no: string | null;
+  sai_no: string | null;
   rejection_reason: string | null;
   approved_by: string | null;
   approved_at: string | null;
@@ -36,7 +39,13 @@ export interface Request {
 }
 
 export interface RequestWithRelations extends Request {
-  requester?: { full_name?: string; email?: string };
+  requester?: {
+    full_name?: string | null;
+    email?: string | null;
+    /** College / division label (profiles.department). */
+    department?: string | null;
+    faculty_department?: string | null;
+  };
   category?: { name?: string };
   supplier?: { name?: string };
 }

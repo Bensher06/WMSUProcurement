@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Modal,
   ActivityIndicator,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -30,10 +29,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
-  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
 
   const handleSubmit = async () => {
     setError('');
@@ -74,30 +69,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    setError('');
-    setForgotPasswordLoading(true);
-    setForgotPasswordSuccess(false);
-    try {
-      await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
-        redirectTo: 'mynewproject://reset-password',
-      });
-      setForgotPasswordSuccess(true);
-      setForgotPasswordEmail('');
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send password reset email.');
-    } finally {
-      setForgotPasswordLoading(false);
-    }
-  };
-
-  const closeForgotModal = () => {
-    setShowForgotPassword(false);
-    setForgotPasswordEmail('');
-    setError('');
-    setForgotPasswordSuccess(false);
-  };
-
   const isLight = colorScheme === 'light';
   const inputBg = isLight ? '#FFFFFF' : '#252525';
   const inputBorder = isLight ? WMSU.gray : '#333';
@@ -119,7 +90,6 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo & branding – match web */}
         <View style={styles.logoSection}>
           <Pressable
             accessibilityRole="button"
@@ -142,7 +112,6 @@ export default function LoginScreen() {
           </Text>
         </View>
 
-        {/* Auth card – match web */}
         <CenteredAlert
           visible={!!error}
           message={error}
@@ -201,102 +170,12 @@ export default function LoginScreen() {
               <Text style={styles.signInButtonText}>Sign In</Text>
             )}
           </Pressable>
-
-          <Pressable
-            onPress={() => {
-              setShowForgotPassword(true);
-              setError('');
-              setForgotPasswordSuccess(false);
-            }}
-            style={styles.forgotLink}
-          >
-            <Text style={[styles.forgotLinkText, { color: textPrimary }]}>Forgot password</Text>
-          </Pressable>
         </View>
 
         <Text style={[styles.footer, { color: textSecondary }]}>
-          Western Mindanao State University © 2025
+          Western Mindanao State University © 2026
         </Text>
       </ScrollView>
-
-      {/* Forgot password modal – match web */}
-      <Modal
-        visible={showForgotPassword}
-        transparent
-        animationType="fade"
-        onRequestClose={closeForgotModal}
-      >
-        <Pressable style={styles.modalOverlay} onPress={closeForgotModal}>
-          <Pressable style={[styles.modalCard, { backgroundColor: cardBg }]} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: textPrimary }]}>Reset Password</Text>
-              <Pressable onPress={closeForgotModal} style={styles.modalClose}>
-                <MaterialIcons name="close" size={24} color={textSecondary} />
-              </Pressable>
-            </View>
-
-            {forgotPasswordSuccess ? (
-              <View style={styles.modalSuccess}>
-                <View style={styles.successIconWrap}>
-                  <MaterialIcons name="check-circle" size={48} color={WMSU.green} />
-                </View>
-                <Text style={[styles.successTitle, { color: textPrimary }]}>Email Sent!</Text>
-                <Text style={[styles.successMessage, { color: textSecondary }]}>
-                  We've sent a password reset link to your email. Check your inbox and follow the
-                  instructions.
-                </Text>
-                <Pressable onPress={closeForgotModal} style={styles.closeButton}>
-                  <Text style={styles.closeButtonText}>Close</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <Text style={[styles.modalHint, { color: textSecondary }]}>
-                  Enter your email and we'll send you a link to reset your password.
-                </Text>
-                {error ? (
-                  <View style={styles.errorBox}>
-                    <MaterialIcons name="error-outline" size={20} color="#B91C1C" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                ) : null}
-                <View style={styles.inputWrap}>
-                  <Text style={[styles.label, { color: textPrimary }]}>Email Address</Text>
-                  <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                    <MaterialIcons name="mail-outline" size={20} color={textSecondary} style={styles.inputIcon} />
-                    <TextInput
-                      value={forgotPasswordEmail}
-                      onChangeText={setForgotPasswordEmail}
-                      placeholder="Enter your email"
-                      placeholderTextColor={textSecondary}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      style={[styles.input, { color: textPrimary }]}
-                      editable={!forgotPasswordLoading}
-                    />
-                  </View>
-                </View>
-                <View style={styles.modalActions}>
-                  <Pressable onPress={closeForgotModal} style={[styles.cancelButton, { borderColor: inputBorder }]}>
-                    <Text style={[styles.cancelButtonText, { color: textPrimary }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={handleForgotPassword}
-                    disabled={forgotPasswordLoading}
-                    style={[styles.sendButton, forgotPasswordLoading && styles.signInButtonDisabled]}
-                  >
-                    {forgotPasswordLoading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.sendButtonText}>Send Reset Link</Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -363,22 +242,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 16,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#B91C1C',
-  },
   inputWrap: {
     marginBottom: 18,
   },
@@ -422,103 +285,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  forgotLink: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  forgotLinkText: {
-    fontSize: 14,
-  },
   footer: {
     fontSize: 13,
     marginTop: 22,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 16,
-    padding: 24,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  modalClose: {
-    padding: 4,
-  },
-  modalHint: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  modalSuccess: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  successIconWrap: {
-    marginBottom: 12,
-  },
-  successTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  successMessage: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  closeButton: {
-    backgroundColor: WMSU.red,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-  },
-  closeButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-  },
-  sendButton: {
-    flex: 1,
-    backgroundColor: WMSU.red,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
   },
 });

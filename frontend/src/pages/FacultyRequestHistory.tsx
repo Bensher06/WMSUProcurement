@@ -11,6 +11,14 @@ import InventoryCustodianSlipModal from '../components/InventoryCustodianSlipMod
 import { getRequestChatReadAt, markRequestChatReadNow } from '../lib/chatUnread';
 
 const amount = (n: number) => `₱${Number(n || 0).toLocaleString()}`;
+const getReuseCount = (r: RequestWithRelations): number => {
+  const payload = r.requisition_payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 0;
+  const meta = (payload as Record<string, unknown>).meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return 0;
+  const raw = (meta as Record<string, unknown>).reuseCount;
+  return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+};
 
 export default function FacultyRequestHistory() {
   const { user } = useAuth();
@@ -144,6 +152,7 @@ export default function FacultyRequestHistory() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Integrity</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Request Again Count</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Form</th>
               </tr>
@@ -151,7 +160,7 @@ export default function FacultyRequestHistory() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
                     No requests found.
                   </td>
                 </tr>
@@ -192,6 +201,15 @@ export default function FacultyRequestHistory() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{amount(r.total_price || 0)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      {getReuseCount(r) > 0 ? (
+                        <span className="inline-flex rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium">
+                          {getReuseCount(r)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {new Date(r.created_at).toLocaleDateString()}
                     </td>

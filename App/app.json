@@ -41,7 +41,8 @@
             "backgroundColor": "#1A1A1A"
           }
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

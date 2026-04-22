@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { activityAPI, auditAPI } from '../lib/supabaseApi';
 import type { ActivityWithActor, AuditEvent } from '../types/database';
-import { Loader2, ScrollText } from 'lucide-react';
+import { Download, Loader2, ScrollText } from 'lucide-react';
 import { CenteredAlert } from '../components/CenteredAlert';
 import { supabase } from '../lib/supabaseClient';
 
@@ -18,6 +18,14 @@ type UnifiedRow = {
   actionLabel: string;
   requestLabel: string;
   details: unknown;
+};
+
+const escapeCsvCell = (value: unknown): string => {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
 };
 
 export default function Logs() {
@@ -218,6 +226,31 @@ export default function Logs() {
     return 'bg-gray-100 text-gray-700';
   };
 
+  const handleExportCsv = () => {
+    const headers = ['When', 'User', 'Action', 'Request', 'Details'];
+    const lines = rows.map((r) =>
+      [
+        new Date(r.created_at).toLocaleString(),
+        r.userLabel,
+        r.actionLabel,
+        r.requestLabel,
+        formatDetails(r.details),
+      ]
+        .map(escapeCsvCell)
+        .join(',')
+    );
+    const csv = [[...headers].map(escapeCsvCell).join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -228,14 +261,25 @@ export default function Logs() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-          <ScrollText className="w-8 h-8 text-red-900" />
-          Logs
-        </h1>
-        <p className="text-base text-gray-500 mt-1">
-          Recent procurement request activity (audit trail).
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+            <ScrollText className="w-8 h-8 text-red-900" />
+            Logs
+          </h1>
+          <p className="text-base text-gray-500 mt-1">
+            Recent procurement request activity (audit trail).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={rows.length === 0}
+          className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-sm text-emerald-800 hover:bg-emerald-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download className="w-4 h-4" />
+          Export CSV
+        </button>
       </div>
 
       <CenteredAlert error={error || undefined} onClose={() => setError('')} />

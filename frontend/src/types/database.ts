@@ -297,6 +297,7 @@ export interface Database {
           quantity_received: number | null;
           partial_delivery_remarks: string | null;
           requisition_payload: Json | null;
+          submitted_snapshot: Json | null;
           submitted_payload_hash: string | null;
           latest_payload_hash: string | null;
           integrity_version: number;
@@ -338,6 +339,7 @@ export interface Database {
           quantity_received?: number | null;
           partial_delivery_remarks?: string | null;
           requisition_payload?: Json | null;
+          submitted_snapshot?: Json | null;
           submitted_payload_hash?: string | null;
           latest_payload_hash?: string | null;
           integrity_version?: number;
@@ -377,6 +379,7 @@ export interface Database {
           quantity_received?: number | null;
           partial_delivery_remarks?: string | null;
           requisition_payload?: Json | null;
+          submitted_snapshot?: Json | null;
           submitted_payload_hash?: string | null;
           latest_payload_hash?: string | null;
           integrity_version?: number;
