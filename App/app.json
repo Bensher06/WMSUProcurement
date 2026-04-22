@@ -51,8 +51,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "3e183f07-e61f-4c61-9646-c7b046fad517"
+        "projectId": "1c97a124-2831-40db-a3b5-37b357c69de1"
       }
-    }
+    },
+    "owner": "bensher"
   }
 }

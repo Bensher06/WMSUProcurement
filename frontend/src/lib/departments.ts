@@ -3,8 +3,8 @@
  * Used by the public sign-up form to filter the Department dropdown
  * after a College is chosen.
  *
- * Colleges not present here simply fall back to a single "Other" option
- * so the sign-up flow never blocks a user.
+ * Colleges not present in this map (including newly added DB colleges) fall
+ * back to a single "Other" option so the sign-up flow never blocks a user.
  */
 export const COLLEGE_DEPARTMENTS: Record<string, string[]> = {
   'College of Law': [
@@ -100,5 +100,7 @@ export const COLLEGE_DEPARTMENTS: Record<string, string[]> = {
 };
 
 export const getDepartmentsForCollege = (college: string): string[] => {
-  return COLLEGE_DEPARTMENTS[college] ?? [];
+  const key = college.trim();
+  if (!key) return [];
+  return COLLEGE_DEPARTMENTS[college] ?? ['Other'];
 };

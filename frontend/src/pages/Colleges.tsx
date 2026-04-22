@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collegesAPI, profilesQueryAPI } from '../lib/supabaseApi';
 import type { College, Profile } from '../types/database';
 import {
@@ -11,10 +11,22 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { CenteredAlert } from '../components/CenteredAlert';
 
 const PAGE_SIZE = 10;
+
+type EditorState =
+  | null
+  | {
+      mode: 'add' | 'edit';
+      id?: string;
+      name: string;
+      is_active: boolean;
+    };
 
 export default function Colleges() {
   const [rows, setRows] = useState<College[]>([]);
@@ -24,6 +36,9 @@ export default function Colleges() {
   const [success, setSuccess] = useState('');
   const [viewing, setViewing] = useState<College | null>(null);
   const [page, setPage] = useState(1);
+  const [editor, setEditor] = useState<EditorState>(null);
+  const [confirmDelete, setConfirmDelete] = useState<College | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const formatAdminName = (p: Profile): string => {
     const first = p.first_name?.trim() || '';
@@ -41,22 +56,19 @@ export default function Colleges() {
   /** App-level status rule: a college is Active only when a College Admin is linked. */
   const isCollegeActive = (c: College): boolean => Boolean(c.handler_id);
 
+  const fetchRows = useCallback(async () => {
+    const [data, heads] = await Promise.all([
+      collegesAPI.getAll(),
+      profilesQueryAPI.getByRole('DeptHead'),
+    ]);
+    setRows(data);
+    setDeptHeads(heads);
+  }, []);
+
   const load = async () => {
     setError('');
     try {
-      // Ensure the canonical WMSU college list exists; ignored if already seeded.
-      try {
-        await collegesAPI.ensureDefaults();
-      } catch (seedErr: any) {
-        console.warn('[Colleges] ensureDefaults skipped:', seedErr?.message);
-      }
-
-      const [data, heads] = await Promise.all([
-        collegesAPI.getAll(),
-        profilesQueryAPI.getByRole('DeptHead'),
-      ]);
-      setRows(data);
-      setDeptHeads(heads);
+      await fetchRows();
     } catch (e: any) {
       setError(e?.message || 'Failed to load colleges');
     } finally {
@@ -65,8 +77,66 @@ export default function Colleges() {
   };
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
+
+  const saveEditor = async () => {
+    if (!editor) return;
+    const name = editor.name.trim();
+    if (!name) {
+      setError('College name is required.');
+      return;
+    }
+    setError('');
+    setSuccess('');
+    setSaving(true);
+    try {
+      if (editor.mode === 'add') {
+        await collegesAPI.create({
+          name,
+          allocation_mode: 'percentage',
+          allocation_value: 0,
+          is_active: editor.is_active,
+        });
+        setSuccess('College added.');
+      } else if (editor.mode === 'edit' && editor.id) {
+        await collegesAPI.update(editor.id, { name, is_active: editor.is_active });
+        setSuccess('College updated.');
+        if (viewing?.id === editor.id) {
+          setViewing((v) => (v ? { ...v, name, is_active: editor.is_active } : v));
+        }
+      }
+      setEditor(null);
+      await fetchRows();
+    } catch (e: any) {
+      setError(e?.message || 'Save failed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const executeDelete = async () => {
+    if (!confirmDelete) return;
+    if (confirmDelete.handler_id) {
+      setError('Unassign the College Admin from this college (Users page) before deleting it.');
+      setConfirmDelete(null);
+      return;
+    }
+    setError('');
+    setSuccess('');
+    setSaving(true);
+    try {
+      await collegesAPI.delete(confirmDelete.id);
+      setSuccess('College removed.');
+      if (viewing?.id === confirmDelete.id) setViewing(null);
+      setConfirmDelete(null);
+      await fetchRows();
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed. This college may still be referenced elsewhere.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -93,11 +163,28 @@ export default function Colleges() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Colleges</h1>
-        <p className="text-base text-gray-500 mt-1">
-          View registered colleges and their assigned College Admins.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Colleges</h1>
+          <p className="text-base text-gray-500 mt-1">
+            Manage college names and visibility. College Admins are still assigned from the Users page
+            (department must match the college name).
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              setSuccess('');
+              setEditor({ mode: 'add', name: '', is_active: true });
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-900 text-white text-sm font-medium hover:bg-red-800 shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add college
+          </button>
+        </div>
       </div>
 
       <CenteredAlert
@@ -114,27 +201,29 @@ export default function Colleges() {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">College</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">College Head</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
-              <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase w-24">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">College admin</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Assigned</th>
+              <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Public signup</th>
+              <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase w-40">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {pageRows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                  No colleges yet.
+                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  No colleges yet. Add one with the button above.
                 </td>
               </tr>
             ) : (
               pageRows.map((c) => {
                 const admin = getCollegeAdmin(c);
                 const active = isCollegeActive(c);
+                const listed = c.is_active !== false;
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-red-900" />
+                        <Building2 className="w-4 h-4 text-red-900 shrink-0" />
                         <span className="font-medium text-gray-900">{c.name}</span>
                       </div>
                     </td>
@@ -154,16 +243,50 @@ export default function Colleges() {
                         {active ? 'Active' : 'Not Active'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 w-24">
-                      <div className="flex items-center justify-center">
+                    <td className="px-6 py-4 text-center text-sm text-gray-600">
+                      {listed ? 'Yes' : 'No'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-0.5">
                         <button
                           type="button"
                           onClick={() => setViewing(c)}
                           className="p-2 text-gray-500 hover:text-red-900 hover:bg-red-50 rounded-lg"
-                          title="View college details"
+                          title="View details"
                           aria-label={`View details for ${c.name}`}
                         >
                           <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError('');
+                            setSuccess('');
+                            setEditor({
+                              mode: 'edit',
+                              id: c.id,
+                              name: c.name,
+                              is_active: listed,
+                            });
+                          }}
+                          className="p-2 text-gray-500 hover:text-red-900 hover:bg-red-50 rounded-lg"
+                          title="Edit college"
+                          aria-label={`Edit ${c.name}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError('');
+                            setSuccess('');
+                            setConfirmDelete(c);
+                          }}
+                          className="p-2 text-gray-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                          title="Delete college"
+                          aria-label={`Delete ${c.name}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -210,6 +333,128 @@ export default function Colleges() {
           </div>
         )}
       </section>
+
+      {editor && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="presentation"
+          onClick={() => !saving && setEditor(null)}
+        >
+          <div
+            className="bg-white rounded-xl w-full max-w-md shadow-2xl border border-gray-200 overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="college-editor-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 id="college-editor-title" className="text-lg font-semibold text-gray-900">
+                {editor.mode === 'add' ? 'Add college' : 'Edit college'}
+              </h2>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setEditor(null)}
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label htmlFor="college-name" className="block text-sm font-medium text-gray-700 mb-1">
+                  Name
+                </label>
+                <input
+                  id="college-name"
+                  value={editor.name}
+                  onChange={(e) => setEditor({ ...editor, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600"
+                  placeholder="e.g. College of Engineering"
+                  autoComplete="off"
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editor.is_active}
+                  onChange={(e) => setEditor({ ...editor, is_active: e.target.checked })}
+                  className="rounded border-gray-300 text-red-900 focus:ring-red-600"
+                />
+                <span className="text-sm text-gray-700">Show on public sign-up page</span>
+              </label>
+              {editor.mode === 'edit' && (
+                <p className="text-xs text-gray-500">
+                  Renaming a college does not update existing user profiles. After a rename, align College Admin
+                  and faculty &quot;department&quot; values on the Users page so they still match this name.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 bg-gray-50 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setEditor(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void saveEditor()}
+                className="px-4 py-2 text-sm font-medium bg-red-900 text-white rounded-lg hover:bg-red-800 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="presentation"
+          onClick={() => !saving && setConfirmDelete(null)}
+        >
+          <div
+            className="bg-white rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-college-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-college-title" className="text-lg font-semibold text-gray-900">
+              Delete college?
+            </h2>
+            <p className="text-sm text-gray-600 mt-2">
+              Remove <span className="font-medium text-gray-900">{confirmDelete.name}</span> from the system.
+              Budget rows tied to this college will be removed. You cannot delete while a College Admin is still
+              assigned.
+            </p>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void executeDelete()}
+                className="px-4 py-2 text-sm font-medium bg-red-700 text-white rounded-lg hover:bg-red-800 disabled:opacity-50"
+              >
+                {saving ? 'Working…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewing && (() => {
         const admin = getCollegeAdmin(viewing);
@@ -281,11 +526,11 @@ export default function Colleges() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 text-gray-900">
-                            <User className="w-4 h-4 text-red-900 flex-shrink-0" />
+                            <User className="w-4 h-4 text-red-900 shrink-0" />
                             <p className="font-semibold truncate">{formatAdminName(admin) || '—'}</p>
                           </div>
                           <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
-                            <Mail className="w-4 h-4 text-red-900 flex-shrink-0" />
+                            <Mail className="w-4 h-4 text-red-900 shrink-0" />
                             <a
                               href={`mailto:${admin.email}`}
                               className="truncate hover:text-red-900 hover:underline"

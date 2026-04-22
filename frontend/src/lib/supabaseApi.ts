@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { getSiteUrl } from './siteUrl';
 import { normalizeUserRole } from './roles';
 import type {
   Profile,
@@ -77,6 +78,7 @@ export const authAPI = {
       email,
       password,
       options: {
+        emailRedirectTo: `${getSiteUrl()}/login`,
         data: {
           full_name: fullName,
           first_name: firstName,
@@ -110,7 +112,7 @@ export const authAPI = {
   // Reset password (sends password reset email)
   resetPassword: async (email: string) => {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${getSiteUrl()}/reset-password`,
     });
     if (error) throw error;
     return data;
@@ -245,11 +247,12 @@ export const registrationAPI = {
       department: payload.department,
     });
 
+    const loginRedirect = `${getSiteUrl()}/login`;
     const { data, error } = await supabase.auth.signUp({
       email,
       password: payload.password,
       options: {
-        emailRedirectTo: payload.emailRedirectTo,
+        emailRedirectTo: payload.emailRedirectTo ?? loginRedirect,
         data: {
           full_name: fullName,
           first_name: firstName,
@@ -300,10 +303,11 @@ export const registrationAPI = {
    * an unconfirmed `auth.users` row.
    */
   resendConfirmation: async (email: string, emailRedirectTo?: string) => {
+    const redirect = emailRedirectTo ?? `${getSiteUrl()}/login`;
     const { data, error } = await supabase.auth.resend({
       type: 'signup',
       email: email.trim(),
-      options: emailRedirectTo ? { emailRedirectTo } : undefined,
+      options: { emailRedirectTo: redirect },
     });
     if (error) {
       console.error('[registrationAPI.resendConfirmation] supabase error', {

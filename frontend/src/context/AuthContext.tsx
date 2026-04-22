@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
+import { getSiteUrl } from '../lib/siteUrl';
 import { isAdminRole, isDeptHeadRole, isFacultyUser, normalizeUserRole } from '../lib/roles';
 import type { Profile, UserRole } from '../types/database';
 
@@ -219,6 +220,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         email,
         password,
         options: {
+          emailRedirectTo: `${getSiteUrl()}/login`,
           data: {
             full_name: fullName,
             role: role

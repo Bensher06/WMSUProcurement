@@ -12,11 +12,8 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import {
-  collegesAPI,
-  registrationAPI,
-  WMSU_DEFAULT_COLLEGES,
-} from '../lib/supabaseApi';
+import { collegesAPI, registrationAPI } from '../lib/supabaseApi';
+import { getSiteUrl } from '../lib/siteUrl';
 import { getDepartmentsForCollege } from '../lib/departments';
 import { CenteredAlert } from '../components/CenteredAlert';
 
@@ -74,36 +71,20 @@ export default function SignUp() {
   const [resendError, setResendError] = useState('');
 
   useEffect(() => {
-    /**
-     * The /signup page is public (unauthenticated). If the `colleges` table
-     * only grants access to authenticated users, `getAll()` may return an
-     * empty list. We merge anything the DB gives us with the canonical
-     * WMSU_DEFAULT_COLLEGES list so the dropdown is always populated with
-     * the full 18-college roster.
-     */
     const loadColleges = async () => {
       try {
-        try {
-          await collegesAPI.ensureDefaults();
-        } catch {
-          /* best-effort; anon users can't write */
-        }
-
-        let dbNames: string[] = [];
-        try {
-          const rows = await collegesAPI.getAll();
-          dbNames = rows.map((c) => c.name);
-        } catch {
-          /* anon read may be blocked by RLS; fall through to defaults */
-        }
-
-        const merged = Array.from(new Set([...WMSU_DEFAULT_COLLEGES, ...dbNames]));
-        merged.sort((a, b) => a.localeCompare(b));
-        setColleges(merged);
+        const rows = await collegesAPI.getAll();
+        const names = rows
+          .filter((c) => c.is_active !== false)
+          .map((c) => c.name)
+          .sort((a, b) => a.localeCompare(b));
+        setColleges(names);
       } catch (e: any) {
-        // Last-resort fallback: still show the canonical roster.
-        setColleges([...WMSU_DEFAULT_COLLEGES].sort((a, b) => a.localeCompare(b)));
-        setError(e?.message || '');
+        setColleges([]);
+        setError(
+          e?.message ||
+            'Could not load colleges. Ask an administrator to confirm Supabase allows public read on the colleges table.'
+        );
       } finally {
         setLoadingColleges(false);
       }
@@ -170,7 +151,7 @@ export default function SignUp() {
         password: form.password,
         college: form.college,
         department: form.department,
-        emailRedirectTo: `${window.location.origin}/login`,
+        emailRedirectTo: `${getSiteUrl()}/login`,
       });
 
       if (outcome.alreadyRegistered) {
@@ -219,7 +200,7 @@ export default function SignUp() {
     try {
       await registrationAPI.resendConfirmation(
         submittedEmail,
-        `${window.location.origin}/login`
+        `${getSiteUrl()}/login`
       );
       setResendState('sent');
     } catch (err: any) {
@@ -421,11 +402,15 @@ export default function SignUp() {
                   value={form.college}
                   onChange={(e) => onChange('college', e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600"
-                  disabled={loadingColleges}
+                  disabled={loadingColleges || colleges.length === 0}
                   required
                 >
                   <option value="">
-                    {loadingColleges ? 'Loading…' : 'Select college'}
+                    {loadingColleges
+                      ? 'Loading…'
+                      : colleges.length === 0
+                        ? 'No colleges available'
+                        : 'Select college'}
                   </option>
                   {colleges.map((c) => (
                     <option key={c} value={c}>
@@ -433,6 +418,12 @@ export default function SignUp() {
                     </option>
                   ))}
                 </select>
+                {!loadingColleges && colleges.length === 0 && (
+                  <p className="text-xs text-amber-700 mt-1">
+                    Active colleges are managed in the admin Colleges page. Public sign-up stays disabled
+                    until at least one college exists.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -443,15 +434,11 @@ export default function SignUp() {
                   value={form.department}
                   onChange={(e) => onChange('department', e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-600 disabled:bg-gray-50 disabled:text-gray-500"
-                  disabled={!form.college || departments.length === 0}
+                  disabled={!form.college}
                   required
                 >
                   <option value="">
-                    {!form.college
-                      ? 'Select a college first'
-                      : departments.length === 0
-                        ? 'No departments listed'
-                        : 'Select department'}
+                    {!form.college ? 'Select a college first' : 'Select department'}
                   </option>
                   {departments.map((d) => (
                     <option key={d} value={d}>
@@ -459,12 +446,6 @@ export default function SignUp() {
                     </option>
                   ))}
                 </select>
-                {form.college && departments.length === 0 && (
-                  <p className="text-xs text-amber-700 mt-1">
-                    No departments are configured for this college yet. Please contact
-                    your College Admin.
-                  </p>
-                )}
               </div>
             </div>
 
