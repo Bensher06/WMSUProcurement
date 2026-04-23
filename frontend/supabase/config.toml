@@ -1,0 +1,9 @@
+# Per-function Edge settings (see https://supabase.com/docs/guides/functions/function-configuration)
+#
+# Projects using asymmetric JWT signing (ES256/RS256) can see
+# UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM at the gateway before Deno runs.
+# We turn off gateway JWT verification for delete-user and validate the
+# caller's access_token inside the function with auth.getUser + profiles.role.
+
+[functions.delete-user]
+verify_jwt = false
