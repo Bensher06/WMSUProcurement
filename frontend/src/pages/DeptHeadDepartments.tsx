@@ -32,6 +32,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Trash2,
   X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -205,6 +206,39 @@ export default function DeptHeadDepartments() {
       setSuccess('Department updated.');
     } catch (e: any) {
       setError(e?.message || 'Failed to update department.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteDepartment = async (row: Department) => {
+    const deptName = row.name.trim();
+    const assignedUsers = profiles.filter(
+      (p) => (p.faculty_department || '').trim() === deptName
+    ).length;
+    const deptRequests = requests.filter(
+      (r) => displayRequesterFacultyDepartment(r) === deptName
+    ).length;
+
+    let prompt = `Delete department "${row.name}"? This cannot be undone.`;
+    if (assignedUsers > 0 || deptRequests > 0) {
+      prompt += `\n\nThis department currently has ${assignedUsers} assigned user(s) and ${deptRequests} request record(s).`;
+      prompt += '\nDelete only if you are sure this department is no longer needed.';
+    }
+
+    const ok = window.confirm(prompt);
+    if (!ok) return;
+
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await departmentsAPI.delete(row.id);
+      if (expandedDepartment === row.name) setExpandedDepartment(null);
+      await reloadCollegeData();
+      setSuccess('Department deleted.');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete department.');
     } finally {
       setSaving(false);
     }
@@ -531,14 +565,26 @@ export default function DeptHeadDepartments() {
                       <p className="text-sm font-medium text-gray-900">{d.name}</p>
                       <p className="text-xs text-gray-500">{d.is_active ? 'Active' : 'Inactive'}</p>
                     </div>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => void toggleDepartment(d)}
-                      className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      {d.is_active ? 'Set inactive' : 'Set active'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void toggleDepartment(d)}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {d.is_active ? 'Set inactive' : 'Set active'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void deleteDepartment(d)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-red-200 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+                        title={`Delete ${d.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
